@@ -23,10 +23,9 @@ Then restart ComfyUI.
 
 1. Add `utils/wildcards -> Wildcard Organizer`.
 2. Set `wildcard_folder` to the folder that contains your wildcard files.
-3. Type a term in `search`.
-4. Enable `include_file_contents` if you want the search to inspect file text too.
-5. Press `Open Organizer`.
-6. Press `Search`, click a result to preview it, then press `Copy Token`.
+3. Type a term in the organizer search box.
+4. Enable `Search contents` if you want the search to inspect file text too.
+5. Press `Search`, click a result to preview it, then press `Copy Token`.
 
 The copied value is the prompt token you can paste into a text encoder.
 
@@ -53,15 +52,7 @@ The same node can build a prompt directly:
 7. Press `Run` to expand wildcards with the current `seed`.
 8. Connect the `prompt` output to a text encoder.
 
-The organizer opens as a movable, resizable browser panel instead of being embedded inside the graph node. This keeps the node compact while giving the search and builder lists enough room to work.
-
-Panel controls:
-
-- `-`: collapse to a small draggable bar.
-- `□`: toggle between normal and large sizes.
-- `x`: hide the panel.
-
-The panel remembers its position, size, and collapsed state in browser local storage.
+The organizer is embedded directly in the node as a custom ComfyUI DOM widget. Resize the node wider if you want more room for search results, builder rows, and preview text.
 
 Outputs:
 

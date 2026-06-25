@@ -3,15 +3,9 @@ import { api } from "../../../scripts/api.js";
 
 const NODE_TYPE = "WildcardOrganizer";
 const HIDDEN_WIDGETS = new Set(["search", "exclude_terms", "include_file_contents", "selected_wildcard", "manual_text", "prompt_parts_json"]);
-const PANEL_STATE_KEY = "ComfyUI.WildcardOrganizer.panelState";
 const FAVORITES_KEY = "ComfyUI.WildcardOrganizer.favorites";
-const DEFAULT_PANEL_STATE = {
-  left: 80,
-  top: 80,
-  width: 760,
-  height: 720,
-  collapsed: false,
-};
+const ORGANIZER_HEIGHT = 760;
+const ORGANIZER_DEFAULT_WIDTH = 920;
 
 function getWidget(node, name) {
   return node.widgets?.find((widget) => widget.name === name);
@@ -129,56 +123,43 @@ function hideInternalWidgets(node) {
     widget.hidden = true;
     widget.options = widget.options || {};
     widget.options.hidden = true;
-    widget.computeSize = () => [0, 0];
+    widget.computeSize = () => [0, -4];
+    if (!widget._wildcardHiddenDrawHooked) {
+      widget._wildcardOriginalDraw = widget.hasOwnProperty("draw") ? widget.draw : undefined;
+      widget._wildcardHiddenDrawHooked = true;
+    }
+    widget.draw = () => {};
     if (widget.element) {
       widget.element.style.display = "none";
     }
   }
 }
 
-function loadPanelState() {
-  try {
-    return { ...DEFAULT_PANEL_STATE, ...(JSON.parse(localStorage.getItem(PANEL_STATE_KEY) || "{}")) };
-  } catch {
-    return { ...DEFAULT_PANEL_STATE };
-  }
-}
-
-function savePanelState(panel) {
-  const state = {
-    left: panel.offsetLeft,
-    top: panel.offsetTop,
-    width: panel.offsetWidth,
-    height: panel.offsetHeight,
-    collapsed: panel.classList.contains("is-collapsed"),
-  };
-  localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(state));
-}
-
-function applyPanelState(panel, state = loadPanelState()) {
-  const maxLeft = Math.max(8, window.innerWidth - 80);
-  const maxTop = Math.max(8, window.innerHeight - 60);
-  panel.style.left = `${Math.min(Math.max(8, state.left), maxLeft)}px`;
-  panel.style.top = `${Math.min(Math.max(8, state.top), maxTop)}px`;
-  panel.style.width = `${Math.max(380, state.width)}px`;
-  panel.style.height = `${Math.max(46, state.height)}px`;
-  panel.classList.toggle("is-collapsed", Boolean(state.collapsed));
-}
-
-function ensureOrganizerPanel(node) {
+function ensureOrganizerWidget(node) {
   repairCorruptWidgetState(node);
-  if (node.__wildcardOrganizerPanel?.isConnected) {
-    node.__wildcardOrganizerPanel.style.display = "flex";
-    applyPanelState(node.__wildcardOrganizerPanel);
-    return node.__wildcardOrganizerPanel;
+  if (node.__wildcardOrganizerWidget) {
+    return node.__wildcardOrganizerWidget;
   }
 
   const panel = createPanel(node);
-  panel.classList.add("wildcard-organizer-floating");
-  document.body.append(panel);
-  applyPanelState(panel);
+  const widget = node.addDOMWidget("wildcard_organizer_ui", "wildcard_organizer_ui", panel, {
+    serialize: false,
+    hideOnZoom: false,
+    getValue: () => "",
+    setValue: () => {},
+  });
+
+  widget.computeSize = function (width) {
+    const nodeWidth = node.size?.[0] || width || ORGANIZER_DEFAULT_WIDTH;
+    const targetWidth = Math.max(360, nodeWidth - 30);
+    panel.style.width = `${targetWidth}px`;
+    panel.style.maxWidth = `${targetWidth}px`;
+    return [targetWidth, ORGANIZER_HEIGHT];
+  };
+
+  node.__wildcardOrganizerWidget = widget;
   node.__wildcardOrganizerPanel = panel;
-  return panel;
+  return widget;
 }
 
 function makeButton(label, onClick) {
@@ -195,27 +176,17 @@ function createPanel(node) {
   panel.className = "wildcard-organizer";
   panel.innerHTML = `
     <style>
-      .wildcard-organizer-floating {
-        position: fixed;
-        z-index: 10020;
-        left: 80px;
-        top: 80px;
-        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-      }
       .wildcard-organizer {
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
         gap: 6px;
-        width: 760px;
-        min-width: 380px;
-        max-width: calc(100vw - 48px);
-        height: 720px;
-        max-height: calc(100vh - 48px);
+        width: 100%;
+        min-width: 360px;
+        height: ${ORGANIZER_HEIGHT - 12}px;
         padding: 8px;
-        overflow-y: auto;
+        overflow-y: hidden;
         overflow-x: hidden;
-        resize: both;
         color: #ddd;
         background: #202124;
         border: 1px solid #3a3a3a;
@@ -232,40 +203,6 @@ function createPanel(node) {
         cursor: pointer;
       }
       .wildcard-organizer button:hover { background: #434650; }
-      .wildcard-organizer .panel-titlebar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-height: 28px;
-        cursor: move;
-        user-select: none;
-      }
-      .wildcard-organizer .panel-title {
-        flex: 1;
-        color: #d9dde6;
-        font-weight: 700;
-      }
-      .wildcard-organizer .panel-action {
-        width: 30px;
-        padding: 0;
-      }
-      .wildcard-organizer.is-collapsed {
-        width: 260px !important;
-        height: 46px !important;
-        min-width: 220px;
-        resize: none;
-        overflow: hidden;
-      }
-      .wildcard-organizer.is-collapsed .filter-grid,
-      .wildcard-organizer.is-collapsed .search-toolbar,
-      .wildcard-organizer.is-collapsed .search-results,
-      .wildcard-organizer.is-collapsed .builder-toolbar,
-      .wildcard-organizer.is-collapsed .manual,
-      .wildcard-organizer.is-collapsed .parts,
-      .wildcard-organizer.is-collapsed .label,
-      .wildcard-organizer.is-collapsed .preview {
-        display: none;
-      }
       .wildcard-organizer .filter-grid {
         display: grid;
         grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto;
@@ -323,15 +260,15 @@ function createPanel(node) {
       }
       .wildcard-organizer .search-results {
         min-height: 180px;
-        flex: 2 1 260px;
+        flex: 2 1 250px;
       }
       .wildcard-organizer .parts {
         min-height: 150px;
-        flex: 1.5 1 220px;
+        flex: 1.35 1 190px;
       }
       .wildcard-organizer .preview {
         min-height: 150px;
-        flex: 1.2 1 190px;
+        flex: 1 1 170px;
       }
       .wildcard-organizer .results {
         min-height: 0;
@@ -420,12 +357,6 @@ function createPanel(node) {
         white-space: pre-wrap;
       }
     </style>
-    <div class="panel-titlebar">
-      <div class="panel-title">Wildcard Organizer</div>
-      <button class="panel-minimize panel-action" type="button" title="Minimize">-</button>
-      <button class="panel-size panel-action" type="button" title="Toggle size">□</button>
-      <button class="panel-close panel-action" type="button" title="Close">x</button>
-    </div>
     <div class="filter-grid">
       <input class="search-input" type="text" placeholder="Search filenames">
       <input class="exclude-input" type="text" placeholder="Exclude terms">
@@ -490,80 +421,9 @@ function createPanel(node) {
   const manual = panel.querySelector(".manual");
   manual.value = getWidget(node, "manual_text")?.value || "";
   manual.addEventListener("input", () => setWidgetValue(node, "manual_text", manual.value));
-  panel.querySelector(".panel-minimize").addEventListener("click", () => toggleCollapsed(panel));
-  panel.querySelector(".panel-size").addEventListener("click", () => togglePanelSize(panel));
-  panel.querySelector(".panel-close").addEventListener("click", () => {
-    panel.style.display = "none";
-    savePanelState(panel);
-  });
-  attachFloatingDrag(panel);
-  attachResizeObserver(panel);
 
   renderParts(node, panel);
   return panel;
-}
-
-function toggleCollapsed(panel) {
-  panel.classList.toggle("is-collapsed");
-  savePanelState(panel);
-}
-
-function togglePanelSize(panel) {
-  panel.classList.remove("is-collapsed");
-  const large = panel.offsetWidth < 900 || panel.offsetHeight < 780;
-  if (large) {
-    panel.style.width = `${Math.min(window.innerWidth - 48, 1040)}px`;
-    panel.style.height = `${Math.min(window.innerHeight - 48, 860)}px`;
-  } else {
-    panel.style.width = `${DEFAULT_PANEL_STATE.width}px`;
-    panel.style.height = `${DEFAULT_PANEL_STATE.height}px`;
-  }
-  savePanelState(panel);
-}
-
-function attachResizeObserver(panel) {
-  if (panel.__wildcardResizeObserver) {
-    return;
-  }
-  let saveTimer = null;
-  panel.__wildcardResizeObserver = new ResizeObserver(() => {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => savePanelState(panel), 150);
-  });
-  panel.__wildcardResizeObserver.observe(panel);
-}
-
-function attachFloatingDrag(panel) {
-  const handle = panel.querySelector(".panel-titlebar");
-  if (!handle) {
-    return;
-  }
-
-  handle.addEventListener("pointerdown", (event) => {
-    if (event.target.closest("button")) {
-      return;
-    }
-    event.preventDefault();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const startLeft = panel.offsetLeft;
-    const startTop = panel.offsetTop;
-    handle.setPointerCapture(event.pointerId);
-
-    const move = (moveEvent) => {
-      panel.style.left = `${Math.max(8, startLeft + moveEvent.clientX - startX)}px`;
-      panel.style.top = `${Math.max(8, startTop + moveEvent.clientY - startY)}px`;
-    };
-    const up = (upEvent) => {
-      handle.releasePointerCapture(upEvent.pointerId);
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", up);
-      savePanelState(panel);
-    };
-
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", up);
-  });
 }
 
 function queryParams(node, panel, refresh = false) {
@@ -894,19 +754,20 @@ app.registerExtension({
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       onNodeCreated?.apply(this, arguments);
-      const panel = createPanel(this);
-      panel.remove();
-      this.addWidget("button", "Open Organizer", null, () => {
-        ensureOrganizerPanel(this);
-      });
       hideInternalWidgets(this);
-      this.setSize([360, this.computeSize?.()?.[1] || 260]);
+      ensureOrganizerWidget(this);
+      requestAnimationFrame(() => {
+        if ((this.size?.[0] || 0) < ORGANIZER_DEFAULT_WIDTH) {
+          this.size[0] = ORGANIZER_DEFAULT_WIDTH;
+        }
+        this.setSize?.([this.size[0], this.computeSize?.()?.[1] || ORGANIZER_HEIGHT + 150]);
+      });
     };
 
     const onRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
-      this.__wildcardOrganizerPanel?.remove?.();
       this.__wildcardOrganizerPanel = null;
+      this.__wildcardOrganizerWidget = null;
       return onRemoved?.apply(this, arguments);
     };
   },
