@@ -307,7 +307,20 @@ def _parts_from_json(parts_json):
         return []
     if not isinstance(data, list):
         return []
-    return [item for item in data if isinstance(item, dict) and item.get("wildcard")]
+    parts = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        if item.get("wildcard") or item.get("text"):
+            parts.append(item)
+            continue
+        if item.get("type") == "choice" and isinstance(item.get("choices"), list):
+            choices = [choice for choice in item["choices"] if isinstance(choice, dict) and choice.get("wildcard")]
+            if choices:
+                updated = dict(item)
+                updated["choices"] = choices
+                parts.append(updated)
+    return parts
 
 
 def _sanitize_build_inputs(parts_json, manual_text):
@@ -326,8 +339,23 @@ def _sanitize_build_inputs(parts_json, manual_text):
     return parts_json, manual_text
 
 
+def _part_prompt(part):
+    if part.get("type") == "choice":
+        options = [str(choice.get("wildcard", "")).strip() for choice in part.get("choices", []) if str(choice.get("wildcard", "")).strip()]
+        if not options:
+            return ""
+        if len(options) == 1:
+            return options[0]
+        return "{%s}" % " | ".join(options)
+
+    if part.get("type") == "text":
+        return str(part.get("text", ""))
+
+    return str(part.get("wildcard", "")).strip()
+
+
 def _join_prompt_parts(parts, separator):
-    return separator.join(str(item.get("wildcard", "")).strip() for item in parts if str(item.get("wildcard", "")).strip())
+    return separator.join(text for text in (_part_prompt(part) for part in parts) if text)
 
 
 def _join_manual_text(manual_text, generated_text, separator):
@@ -388,7 +416,7 @@ def _expand_text(root, text, seed=0, max_depth=20):
     return expanded
 
 
-def _build_prompt(root, parts_json, manual_text="", separator=", ", seed=0, expand_wildcards=True):
+def _build_prompt(root, parts_json, manual_text="", separator=", ", seed=0, expand_wildcards=False):
     parts_json, manual_text = _sanitize_build_inputs(parts_json, manual_text)
     parts = _parts_from_json(parts_json)
     wildcard_prompt = _join_prompt_parts(parts, separator)
@@ -452,7 +480,7 @@ if PromptServer is not None and web is not None:
                 data.get("manual_text", ""),
                 data.get("separator", ", "),
                 data.get("seed", 0),
-                data.get("expand_wildcards", True),
+                data.get("expand_wildcards", False),
             )
             return web.json_response(result)
         except Exception as exc:
@@ -472,13 +500,13 @@ class WildcardOrganizer:
                 "prompt_parts_json": ("STRING", {"default": "[]", "multiline": False}),
                 "separator": ("STRING", {"default": ", ", "multiline": False}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
-                "expand_wildcards": ("BOOLEAN", {"default": True}),
+                "expand_wildcards": ("BOOLEAN", {"default": False}),
                 "exclude_terms": ("STRING", {"default": "", "multiline": False}),
             }
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("prompt", "wildcard_prompt", "expanded_wildcards", "preview")
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
     FUNCTION = "organize"
     CATEGORY = "utils/wildcards"
 
@@ -492,31 +520,17 @@ class WildcardOrganizer:
         prompt_parts_json="[]",
         separator=", ",
         seed=0,
-        expand_wildcards=True,
+        expand_wildcards=False,
         exclude_terms="",
     ):
         if not wildcard_folder:
             wildcard_prompt = _join_prompt_parts(_parts_from_json(prompt_parts_json), separator)
             prompt = _join_manual_text(manual_text, wildcard_prompt, separator)
-            return (prompt, wildcard_prompt, wildcard_prompt, "")
+            return (prompt,)
 
         root = _resolve_root(wildcard_folder)
         built = _build_prompt(root, prompt_parts_json, manual_text, separator, seed, expand_wildcards)
-        results = _search_wildcards(root, search, include_file_contents, exclude_terms)
-
-        selected = None
-        if selected_wildcard:
-            selected_key = selected_wildcard.strip("_")
-            selected = next((item for item in results if item["key"] == selected_key or item["wildcard"] == selected_wildcard), None)
-        if selected is None and results:
-            selected = results[0]
-
-        if selected is None:
-            return (built["prompt"], built["wildcard_prompt"], built["expanded_wildcards"], "")
-
-        preview_data = _preview(root, selected["path"], selected["key"])
-        preview = preview_data.get("selected_preview") or preview_data.get("content", "")
-        return (built["prompt"], built["wildcard_prompt"], built["expanded_wildcards"], preview)
+        return (built["prompt"],)
 
 
 NODE_CLASS_MAPPINGS = {

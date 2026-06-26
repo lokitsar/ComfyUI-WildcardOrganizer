@@ -2,7 +2,17 @@ import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
 const NODE_TYPE = "WildcardOrganizer";
-const HIDDEN_WIDGETS = new Set(["search", "exclude_terms", "include_file_contents", "selected_wildcard", "manual_text", "prompt_parts_json"]);
+const HIDDEN_WIDGETS = new Set([
+  "search",
+  "exclude_terms",
+  "include_file_contents",
+  "selected_wildcard",
+  "manual_text",
+  "prompt_parts_json",
+  "separator",
+  "seed",
+  "expand_wildcards",
+]);
 const FAVORITES_KEY = "ComfyUI.WildcardOrganizer.favorites";
 const ORGANIZER_HEIGHT = 760;
 const ORGANIZER_DEFAULT_WIDTH = 920;
@@ -18,34 +28,98 @@ function setWidgetValue(node, name, value) {
   }
 }
 
-function boolValue(value) {
-  if (typeof value === "string") {
-    return ["1", "true", "yes", "on"].includes(value.toLowerCase());
-  }
-  return Boolean(value);
-}
-
 function getParts(node) {
   const raw = getWidget(node, "prompt_parts_json")?.value || "[]";
   try {
     const parts = JSON.parse(raw);
-    return Array.isArray(parts) ? parts : [];
+    return Array.isArray(parts) ? parts.filter(isUsablePart) : [];
   } catch {
     return [];
   }
 }
 
 function setParts(node, parts) {
-  setWidgetValue(node, "prompt_parts_json", JSON.stringify(parts));
+  setWidgetValue(node, "prompt_parts_json", JSON.stringify(parts.filter(isUsablePart)));
 }
 
 function parseParts(value) {
   try {
     const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === "object" && item.wildcard) : null;
+    return Array.isArray(parsed) ? parsed.filter(isUsablePart) : null;
   } catch {
     return null;
   }
+}
+
+function isUsablePart(part) {
+  if (!part || typeof part !== "object") {
+    return false;
+  }
+  if (part.wildcard || part.text) {
+    return true;
+  }
+  return part.type === "choice" && Array.isArray(part.choices) && part.choices.some((choice) => choice?.wildcard);
+}
+
+function wildcardPart(item) {
+  return {
+    type: "wildcard",
+    wildcard: item.wildcard,
+    key: item.key,
+    path: item.path,
+    relative_path: item.relative_path,
+  };
+}
+
+function partChoices(part) {
+  if (part?.type === "choice") {
+    return (part.choices || []).filter((choice) => choice?.wildcard).map(wildcardPart);
+  }
+  if (part?.wildcard) {
+    return [wildcardPart(part)];
+  }
+  return [];
+}
+
+function partPrompt(part) {
+  if (part?.type === "choice") {
+    const options = partChoices(part).map((choice) => choice.wildcard).filter(Boolean);
+    if (!options.length) {
+      return "";
+    }
+    return options.length === 1 ? options[0] : `{${options.join(" | ")}}`;
+  }
+  if (part?.type === "text") {
+    return String(part.text || "");
+  }
+  return String(part?.wildcard || "").trim();
+}
+
+function partTitle(part) {
+  if (part?.type === "choice") {
+    return partPrompt(part);
+  }
+  if (part?.type === "text") {
+    return part.text || "Text";
+  }
+  return part?.wildcard || "";
+}
+
+function partSubtitle(part) {
+  if (part?.type === "choice") {
+    return `${partChoices(part).length} choices`;
+  }
+  return part?.relative_path || part?.key || "";
+}
+
+function buildPromptText(node, panel) {
+  const separator = getWidget(node, "separator")?.value || ", ";
+  const manual = (panel?.querySelector(".manual")?.value ?? getWidget(node, "manual_text")?.value ?? "").trim();
+  const builderText = getParts(node).map(partPrompt).filter(Boolean).join(separator).trim();
+  if (manual && builderText) {
+    return `${manual}${separator}${builderText}`;
+  }
+  return manual || builderText;
 }
 
 function repairCorruptWidgetState(node) {
@@ -254,6 +328,13 @@ function createPanel(node) {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .wildcard-organizer .joiner-input {
+        flex: 0 0 76px;
+      }
+      .wildcard-organizer .text-part-input {
+        flex: 1 1 120px;
+        min-width: 90px;
+      }
       .wildcard-organizer .label {
         color: #b9c0cc;
         font-weight: 700;
@@ -315,6 +396,13 @@ function createPanel(node) {
         cursor: grab;
         background: #24272d;
       }
+      .wildcard-organizer .part.choice {
+        background: #26303a;
+      }
+      .wildcard-organizer .part.choice strong::before {
+        content: "{ } ";
+        color: #9ad5ff;
+      }
       .wildcard-organizer .part.selected {
         background: #3a4f73;
         outline: 1px solid #8fb5ff;
@@ -365,10 +453,10 @@ function createPanel(node) {
     <div class="toolbar search-toolbar"></div>
     <div class="results search-results"></div>
     <div class="toolbar builder-toolbar"></div>
-    <textarea class="manual" placeholder="Manual prompt text to prepend to the generated wildcard prompt"></textarea>
+    <textarea class="manual" placeholder="Manual prompt text to prepend to the generated prompt"></textarea>
     <div class="parts results"></div>
     <div class="label">Preview / Final Prompt</div>
-    <pre class="preview">Search for wildcards, add them to the builder, drag to reorder, then run.</pre>
+    <pre class="preview">Search for wildcards, add them to the builder, then group selected rows into choices.</pre>
   `;
 
   const toolbar = panel.querySelector(".search-toolbar");
@@ -411,18 +499,48 @@ function createPanel(node) {
   }
 
   builderToolbar.append(
-    makeButton("Run", () => runBuilder(node, panel)),
     makeButton("Copy Prompt", () => copyPrompt(panel)),
+    makeButton("Group Choice", () => groupSelectedParts(node, panel)),
+    makeButton("Ungroup", () => ungroupSelectedParts(node, panel)),
     makeButton("Remove Selected", () => removeSelectedParts(node, panel)),
     makeButton("Clear", () => clearBuilder(node, panel)),
+    Object.assign(document.createElement("input"), {
+      className: "text-part-input",
+      type: "text",
+      placeholder: "Text part",
+      title: "Literal text to add as a builder row",
+    }),
+    makeButton("Add Text", () => addTextPart(node, panel)),
+    Object.assign(document.createElement("input"), {
+      className: "joiner-input",
+      type: "text",
+      title: "Prompt joiner",
+      value: getWidget(node, "separator")?.value || ", ",
+    }),
     Object.assign(document.createElement("div"), { className: "status", textContent: "Builder" })
   );
 
+  const joiner = panel.querySelector(".joiner-input");
+  joiner.addEventListener("input", () => {
+    setWidgetValue(node, "separator", joiner.value);
+    updateFinalPrompt(node, panel);
+  });
+  const textPartInput = panel.querySelector(".text-part-input");
+  textPartInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      addTextPart(node, panel);
+    }
+  });
+
   const manual = panel.querySelector(".manual");
   manual.value = getWidget(node, "manual_text")?.value || "";
-  manual.addEventListener("input", () => setWidgetValue(node, "manual_text", manual.value));
+  manual.addEventListener("input", () => {
+    setWidgetValue(node, "manual_text", manual.value);
+    updateFinalPrompt(node, panel);
+  });
 
-  renderParts(node, panel);
+  renderParts(node, panel, false);
+  updateFinalPrompt(node, panel, false);
   return panel;
 }
 
@@ -442,19 +560,6 @@ function queryParams(node, panel, refresh = false) {
 
 async function fetchJson(path) {
   const response = await api.fetchApi(path);
-  const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error || response.statusText);
-  }
-  return data;
-}
-
-async function postJson(path, body) {
-  const response = await api.fetchApi(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
   const data = await response.json();
   if (!response.ok || data.error) {
     throw new Error(data.error || response.statusText);
@@ -586,18 +691,32 @@ function addSelected(node, panel) {
   }
 
   const parts = getParts(node);
-  parts.push({
-    wildcard: selected.wildcard,
-    key: selected.key,
-    path: selected.path,
-    relative_path: selected.relative_path,
-  });
+  parts.push(wildcardPart(selected));
   setParts(node, parts);
-  renderParts(node, panel);
+  renderParts(node, panel, true);
   statusEl.textContent = `Added ${selected.wildcard}`;
 }
 
-function renderParts(node, panel) {
+function addTextPart(node, panel) {
+  const input = panel.querySelector(".text-part-input");
+  const statusEl = panel.querySelector(".builder-toolbar .status");
+  const text = input?.value || "";
+  if (!text.trim()) {
+    statusEl.textContent = "Type a text part first";
+    return;
+  }
+
+  const parts = getParts(node);
+  parts.push({ type: "text", text });
+  setParts(node, parts);
+  if (input) {
+    input.value = "";
+  }
+  renderParts(node, panel, true);
+  statusEl.textContent = `Added text`;
+}
+
+function renderParts(node, panel, showPrompt = false) {
   const partsEl = panel.querySelector(".parts");
   partsEl.replaceChildren();
   const parts = getParts(node);
@@ -610,18 +729,20 @@ function renderParts(node, panel) {
     empty.className = "part";
     empty.textContent = "No wildcard parts yet.";
     partsEl.append(empty);
+    updateFinalPrompt(node, panel, showPrompt);
     return;
   }
 
   parts.forEach((part, index) => {
     const row = document.createElement("div");
     row.className = "part";
+    row.classList.toggle("choice", part.type === "choice");
     row.draggable = true;
     row.dataset.index = String(index);
     row.classList.toggle("selected", panel._selectedPartIndexes.has(index));
     row.innerHTML = `<strong></strong><span></span>`;
-    row.querySelector("strong").textContent = part.wildcard;
-    row.querySelector("span").textContent = part.relative_path || part.key || "";
+    row.querySelector("strong").textContent = partTitle(part);
+    row.querySelector("span").textContent = partSubtitle(part);
 
     row.addEventListener("dragstart", (event) => {
       row.classList.add("dragging");
@@ -642,7 +763,7 @@ function renderParts(node, panel) {
       updated.splice(to, 0, moved);
       setParts(node, updated);
       panel._selectedPartIndexes = new Set([to]);
-      renderParts(node, panel);
+      renderParts(node, panel, true);
     });
 
     row.addEventListener("click", (event) => {
@@ -658,7 +779,7 @@ function renderParts(node, panel) {
         selected.add(index);
       }
       panel._selectedPartIndexes = selected;
-      renderParts(node, panel);
+      renderParts(node, panel, false);
     });
 
     row.addEventListener("dblclick", () => {
@@ -666,11 +787,13 @@ function renderParts(node, panel) {
       updated.splice(index, 1);
       setParts(node, updated);
       panel._selectedPartIndexes = new Set();
-      renderParts(node, panel);
+      renderParts(node, panel, true);
     });
 
     partsEl.append(row);
   });
+
+  updateFinalPrompt(node, panel, showPrompt);
 }
 
 function removeSelectedParts(node, panel) {
@@ -689,46 +812,88 @@ function removeSelectedParts(node, panel) {
   }
   setParts(node, updated);
   panel._selectedPartIndexes = new Set();
-  renderParts(node, panel);
+  renderParts(node, panel, true);
   statusEl.textContent = `Removed ${selected.length} item${selected.length === 1 ? "" : "s"}`;
 }
 
-async function runBuilder(node, panel) {
-  repairCorruptWidgetState(node);
-  const previewEl = panel.querySelector(".preview");
-  previewEl.textContent = "Building prompt...";
+function groupSelectedParts(node, panel) {
+  const selected = [...(panel._selectedPartIndexes || new Set())].sort((a, b) => a - b);
+  const statusEl = panel.querySelector(".builder-toolbar .status");
+  if (selected.length < 2) {
+    statusEl.textContent = "Select two or more builder rows";
+    return;
+  }
 
-  const manual = panel.querySelector(".manual").value;
+  const parts = getParts(node);
+  const choices = selected.flatMap((index) => partChoices(parts[index]));
+  if (choices.length < 2) {
+    statusEl.textContent = "Need at least two wildcard choices";
+    return;
+  }
+
+  const firstIndex = selected[0];
+  const selectedSet = new Set(selected);
+  const updated = parts.filter((_, index) => !selectedSet.has(index));
+  updated.splice(firstIndex, 0, { type: "choice", choices });
+  setParts(node, updated);
+  panel._selectedPartIndexes = new Set([firstIndex]);
+  renderParts(node, panel, true);
+  statusEl.textContent = `Grouped ${choices.length} choices`;
+}
+
+function ungroupSelectedParts(node, panel) {
+  const selected = [...(panel._selectedPartIndexes || new Set())].sort((a, b) => b - a);
+  const statusEl = panel.querySelector(".builder-toolbar .status");
+  if (!selected.length) {
+    statusEl.textContent = "Select a choice group first";
+    return;
+  }
+
+  const parts = getParts(node);
+  let changed = 0;
+  for (const index of selected) {
+    const part = parts[index];
+    if (part?.type !== "choice") {
+      continue;
+    }
+    parts.splice(index, 1, ...partChoices(part));
+    changed += 1;
+  }
+
+  if (!changed) {
+    statusEl.textContent = "Selected rows are not choice groups";
+    return;
+  }
+
+  setParts(node, parts);
+  panel._selectedPartIndexes = new Set();
+  renderParts(node, panel, true);
+  statusEl.textContent = `Ungrouped ${changed} choice group${changed === 1 ? "" : "s"}`;
+}
+
+function updateFinalPrompt(node, panel, showPreview = true) {
+  const manual = panel.querySelector(".manual")?.value || "";
   setWidgetValue(node, "manual_text", manual);
-
-  try {
-    const data = await postJson("/wildcard_organizer/build", {
-      root: getWidget(node, "wildcard_folder")?.value || "",
-      parts_json: getWidget(node, "prompt_parts_json")?.value || "[]",
-      manual_text: manual,
-      separator: getWidget(node, "separator")?.value || ", ",
-      seed: getWidget(node, "seed")?.value || 0,
-      expand_wildcards: boolValue(getWidget(node, "expand_wildcards")?.value),
-    });
-    panel._lastPrompt = data.prompt;
-    previewEl.textContent = data.prompt || "No prompt text yet.";
-  } catch (error) {
-    previewEl.textContent = error.message;
+  const prompt = buildPromptText(node, panel);
+  panel._lastPrompt = prompt;
+  if (showPreview) {
+    panel.querySelector(".preview").textContent = prompt || "No prompt text yet.";
   }
 }
 
 async function copyPrompt(panel) {
   const prompt = panel._lastPrompt || panel.querySelector(".preview").textContent || "";
   await navigator.clipboard.writeText(prompt);
-  panel.querySelector(".search-toolbar .status").textContent = "Copied final prompt";
+  panel.querySelector(".builder-toolbar .status").textContent = "Copied final prompt";
 }
 
 function clearBuilder(node, panel) {
   setParts(node, []);
   panel._selectedPartIndexes = new Set();
-  renderParts(node, panel);
+  renderParts(node, panel, true);
   panel._lastPrompt = "";
-  panel.querySelector(".preview").textContent = "Builder cleared.";
+  updateFinalPrompt(node, panel);
+  panel.querySelector(".builder-toolbar .status").textContent = "Builder cleared";
 }
 
 async function copySelected(node, panel) {

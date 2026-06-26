@@ -41,25 +41,29 @@ Favorites:
 
 ## Prompt Builder
 
-The same node can build a prompt directly:
+The same node can compose the final prompt directly:
 
 1. Search for a wildcard and click a result.
 2. Press `Add` to put it into the builder.
 3. Drag builder rows to reorder them.
-4. Click builder rows to highlight them. Use `Remove Selected` to remove highlighted rows.
-5. Double-click a builder row to remove it quickly.
-6. Type fixed prompt text in the manual text box.
-7. Press `Run` to expand wildcards with the current `seed`.
-8. Connect the `prompt` output to a text encoder.
+4. Select two or more wildcard rows and press `Group Choice` to make a ComfyUI choice expression like `{__holiday__ | __setting__ | __holiday_theme__}`.
+5. Use `Ungroup` to split a selected choice group back into separate rows.
+6. Use `Text part` plus `Add Text` for literal phrases such as `wearing` or `in`.
+7. Click builder rows to highlight them. Use `Remove Selected` to remove highlighted rows.
+8. Double-click a builder row to remove it quickly.
+9. Connect the `prompt` output to a text encoder.
 
 The organizer is embedded directly in the node as a custom ComfyUI DOM widget. Resize the node wider if you want more room for search results, builder rows, and preview text.
 
-Outputs:
+The node has one output:
 
-- `prompt`: manual text plus the expanded wildcard output.
-- `wildcard_prompt`: the ordered wildcard tokens before expansion.
-- `expanded_wildcards`: only the expanded wildcard portion.
-- `preview`: the selected result preview.
+- `prompt`: the final composed prompt string.
+
+Example builder output using an empty joiner and text rows like `, wearing ` and `, in `:
+
+```text
+{__hair-color__ | __eye-color__}, wearing {__shirt__ | __jacket__ | __dress__}, in __location__
+```
 
 ## Impact Pack Compatibility
 
