@@ -59,6 +59,8 @@ The node has one output:
 
 - `prompt`: the final composed prompt string.
 
+The builder preserves wildcard tokens and ComfyUI choice groups. It does not expand `__wildcard__` tokens itself.
+
 Example builder output using an empty joiner and text rows like `, wearing ` and `, in `:
 
 ```text

@@ -125,6 +125,7 @@ function buildPromptText(node, panel) {
 function repairCorruptWidgetState(node) {
   const manualWidget = getWidget(node, "manual_text");
   const partsWidget = getWidget(node, "prompt_parts_json");
+  setWidgetValue(node, "expand_wildcards", false);
   const manual = String(manualWidget?.value || "").trim();
   const partsRaw = String(partsWidget?.value || "").trim();
   const manualParts = parseParts(manual);

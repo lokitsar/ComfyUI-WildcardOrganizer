@@ -420,12 +420,11 @@ def _build_prompt(root, parts_json, manual_text="", separator=", ", seed=0, expa
     parts_json, manual_text = _sanitize_build_inputs(parts_json, manual_text)
     parts = _parts_from_json(parts_json)
     wildcard_prompt = _join_prompt_parts(parts, separator)
-    expanded_wildcards = _expand_text(root, wildcard_prompt, seed) if _bool(expand_wildcards) else wildcard_prompt
-    final_prompt = _join_manual_text(manual_text, expanded_wildcards, separator)
+    final_prompt = _join_manual_text(manual_text, wildcard_prompt, separator)
     return {
         "prompt": final_prompt,
         "wildcard_prompt": wildcard_prompt,
-        "expanded_wildcards": expanded_wildcards,
+        "expanded_wildcards": wildcard_prompt,
         "parts": parts,
     }
 
@@ -480,7 +479,7 @@ if PromptServer is not None and web is not None:
                 data.get("manual_text", ""),
                 data.get("separator", ", "),
                 data.get("seed", 0),
-                data.get("expand_wildcards", False),
+                False,
             )
             return web.json_response(result)
         except Exception as exc:
@@ -529,7 +528,7 @@ class WildcardOrganizer:
             return (prompt,)
 
         root = _resolve_root(wildcard_folder)
-        built = _build_prompt(root, prompt_parts_json, manual_text, separator, seed, expand_wildcards)
+        built = _build_prompt(root, prompt_parts_json, manual_text, separator, seed, False)
         return (built["prompt"],)
 
 
