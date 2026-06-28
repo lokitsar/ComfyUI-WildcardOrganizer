@@ -58,7 +58,7 @@ function isUsablePart(part) {
   if (part.wildcard || part.text) {
     return true;
   }
-  return part.type === "choice" && Array.isArray(part.choices) && part.choices.some((choice) => choice?.wildcard);
+  return part.type === "choice" && Array.isArray(part.choices) && part.choices.some((choice) => choice?.wildcard || choice?.text);
 }
 
 function wildcardPart(item) {
@@ -71,19 +71,29 @@ function wildcardPart(item) {
   };
 }
 
-function partChoices(part) {
+function textPart(item) {
+  return {
+    type: "text",
+    text: item.text,
+  };
+}
+
+function choiceOptions(part) {
   if (part?.type === "choice") {
-    return (part.choices || []).filter((choice) => choice?.wildcard).map(wildcardPart);
+    return (part.choices || []).filter((choice) => choice?.wildcard || choice?.text).map((choice) => (choice.wildcard ? wildcardPart(choice) : textPart(choice)));
   }
   if (part?.wildcard) {
     return [wildcardPart(part)];
+  }
+  if (part?.type === "text" && String(part.text || "").trim()) {
+    return [textPart(part)];
   }
   return [];
 }
 
 function partPrompt(part) {
   if (part?.type === "choice") {
-    const options = partChoices(part).map((choice) => choice.wildcard).filter(Boolean);
+    const options = choiceOptions(part).map(partPrompt).filter((option) => option.trim());
     if (!options.length) {
       return "";
     }
@@ -107,7 +117,7 @@ function partTitle(part) {
 
 function partSubtitle(part) {
   if (part?.type === "choice") {
-    return `${partChoices(part).length} choices`;
+    return `${choiceOptions(part).length} choices`;
   }
   return part?.relative_path || part?.key || "";
 }
@@ -826,9 +836,9 @@ function groupSelectedParts(node, panel) {
   }
 
   const parts = getParts(node);
-  const choices = selected.flatMap((index) => partChoices(parts[index]));
+  const choices = selected.flatMap((index) => choiceOptions(parts[index]));
   if (choices.length < 2) {
-    statusEl.textContent = "Need at least two wildcard choices";
+    statusEl.textContent = "Need at least two choices";
     return;
   }
 
@@ -857,7 +867,7 @@ function ungroupSelectedParts(node, panel) {
     if (part?.type !== "choice") {
       continue;
     }
-    parts.splice(index, 1, ...partChoices(part));
+    parts.splice(index, 1, ...choiceOptions(part));
     changed += 1;
   }
 

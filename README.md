@@ -46,7 +46,7 @@ The same node can compose the final prompt directly:
 1. Search for a wildcard and click a result.
 2. Press `Add` to put it into the builder.
 3. Drag builder rows to reorder them.
-4. Select two or more wildcard rows and press `Group Choice` to make a ComfyUI choice expression like `{__holiday__ | __setting__ | __holiday_theme__}`.
+4. Select two or more rows and press `Group Choice` to make a ComfyUI choice expression like `{__holiday__ | __setting__ | __holiday_theme__}` or `{black | red | blue}`.
 5. Use `Ungroup` to split a selected choice group back into separate rows.
 6. Use `Text part` plus `Add Text` for literal phrases such as `wearing` or `in`.
 7. Click builder rows to highlight them. Use `Remove Selected` to remove highlighted rows.

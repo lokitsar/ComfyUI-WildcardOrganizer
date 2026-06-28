@@ -315,7 +315,7 @@ def _parts_from_json(parts_json):
             parts.append(item)
             continue
         if item.get("type") == "choice" and isinstance(item.get("choices"), list):
-            choices = [choice for choice in item["choices"] if isinstance(choice, dict) and choice.get("wildcard")]
+            choices = [choice for choice in item["choices"] if isinstance(choice, dict) and (choice.get("wildcard") or choice.get("text"))]
             if choices:
                 updated = dict(item)
                 updated["choices"] = choices
@@ -341,7 +341,8 @@ def _sanitize_build_inputs(parts_json, manual_text):
 
 def _part_prompt(part):
     if part.get("type") == "choice":
-        options = [str(choice.get("wildcard", "")).strip() for choice in part.get("choices", []) if str(choice.get("wildcard", "")).strip()]
+        options = [_part_prompt(choice) for choice in part.get("choices", []) if isinstance(choice, dict)]
+        options = [option for option in options if option.strip()]
         if not options:
             return ""
         if len(options) == 1:
