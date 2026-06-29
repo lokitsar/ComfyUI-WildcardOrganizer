@@ -51,7 +51,8 @@ The same node can compose the final prompt directly:
 6. Use `Text part` plus `Add Text` for literal phrases such as `wearing` or `in`.
 7. Click builder rows to highlight them. Use `Remove Selected` to remove highlighted rows.
 8. Double-click a builder row to remove it quickly.
-9. Connect the `prompt` output to a text encoder.
+9. Check the `Resolved Prompt` box at the bottom to see the exact text selected from wildcard files and choice groups.
+10. Connect the `prompt` output to a text encoder.
 
 The organizer is embedded directly in the node as a custom ComfyUI DOM widget. Resize the node wider if you want more room for search results, builder rows, and preview text.
 
@@ -59,9 +60,9 @@ The node has one output:
 
 - `prompt`: the final composed prompt string.
 
-The builder preserves wildcard tokens and ComfyUI choice groups. It does not expand `__wildcard__` tokens itself.
+By default, the node resolves `__wildcard__` tokens and `{choice | groups}` itself before sending `prompt` downstream. Use the `send resolved text` checkbox beside the resolved prompt box to switch between resolved output and the raw wildcard expression. Use `Reroll` or edit the seed to pick a different deterministic wildcard outcome.
 
-Example builder output using an empty joiner and text rows like `, wearing ` and `, in `:
+Example raw builder expression using an empty joiner and text rows like `, wearing ` and `, in `:
 
 ```text
 {__hair-color__ | __eye-color__}, wearing {__shirt__ | __jacket__ | __dress__}, in __location__

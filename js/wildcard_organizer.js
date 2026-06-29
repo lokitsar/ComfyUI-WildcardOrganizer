@@ -14,8 +14,9 @@ const HIDDEN_WIDGETS = new Set([
   "expand_wildcards",
 ]);
 const FAVORITES_KEY = "ComfyUI.WildcardOrganizer.favorites";
-const ORGANIZER_HEIGHT = 760;
+const ORGANIZER_HEIGHT = 880;
 const ORGANIZER_DEFAULT_WIDTH = 920;
+const RESOLVE_DEBOUNCE_MS = 250;
 
 function getWidget(node, name) {
   return node.widgets?.find((widget) => widget.name === name);
@@ -28,14 +29,45 @@ function setWidgetValue(node, name, value) {
   }
 }
 
-function getParts(node) {
-  const raw = getWidget(node, "prompt_parts_json")?.value || "[]";
-  try {
-    const parts = JSON.parse(raw);
-    return Array.isArray(parts) ? parts.filter(isUsablePart) : [];
-  } catch {
+function boolValue(value, defaultValue = false) {
+  if (value === undefined || value === null) {
+    return defaultValue;
+  }
+  if (typeof value === "string") {
+    return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+  }
+  return Boolean(value);
+}
+
+function normalizePartsValue(node) {
+  const widget = getWidget(node, "prompt_parts_json");
+  const raw = String(widget?.value || "").trim();
+  if (!raw) {
+    setWidgetValue(node, "prompt_parts_json", "[]");
     return [];
   }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      setWidgetValue(node, "prompt_parts_json", "[]");
+      return [];
+    }
+
+    const parts = parsed.filter(isUsablePart);
+    const normalized = JSON.stringify(parts);
+    if (normalized !== raw) {
+      setWidgetValue(node, "prompt_parts_json", normalized);
+    }
+    return parts;
+  } catch {
+    setWidgetValue(node, "prompt_parts_json", "[]");
+    return [];
+  }
+}
+
+function getParts(node) {
+  return normalizePartsValue(node);
 }
 
 function setParts(node, parts) {
@@ -135,7 +167,6 @@ function buildPromptText(node, panel) {
 function repairCorruptWidgetState(node) {
   const manualWidget = getWidget(node, "manual_text");
   const partsWidget = getWidget(node, "prompt_parts_json");
-  setWidgetValue(node, "expand_wildcards", false);
   const manual = String(manualWidget?.value || "").trim();
   const partsRaw = String(partsWidget?.value || "").trim();
   const manualParts = parseParts(manual);
@@ -151,6 +182,8 @@ function repairCorruptWidgetState(node) {
   if (!manualParts?.length && partsRaw && !currentParts && /^__.+__$/.test(partsRaw)) {
     setParts(node, []);
   }
+
+  normalizePartsValue(node);
 }
 
 function loadFavorites() {
@@ -255,6 +288,49 @@ function makeButton(label, onClick) {
   return button;
 }
 
+function syncPanelFromWidgets(node, panel) {
+  const searchInput = panel.querySelector(".search-input");
+  const excludeInput = panel.querySelector(".exclude-input");
+  const contentsInput = panel.querySelector(".contents-input");
+  const manual = panel.querySelector(".manual");
+  const joiner = panel.querySelector(".joiner-input");
+  const resolveOutput = panel.querySelector(".resolve-output");
+  const seedInput = panel.querySelector(".seed-input");
+
+  if (searchInput) {
+    searchInput.value = getWidget(node, "search")?.value || "";
+  }
+  if (excludeInput) {
+    excludeInput.value = getWidget(node, "exclude_terms")?.value || "";
+  }
+  if (contentsInput) {
+    contentsInput.checked = boolValue(getWidget(node, "include_file_contents")?.value);
+  }
+  if (manual) {
+    manual.value = getWidget(node, "manual_text")?.value || "";
+  }
+  if (joiner) {
+    joiner.value = getWidget(node, "separator")?.value || ", ";
+  }
+  if (resolveOutput) {
+    resolveOutput.checked = boolValue(getWidget(node, "expand_wildcards")?.value, true);
+  }
+  if (seedInput) {
+    seedInput.value = String(getWidget(node, "seed")?.value ?? 0);
+  }
+}
+
+function refreshOrganizerPanel(node) {
+  const panel = node.__wildcardOrganizerPanel;
+  if (!panel) {
+    return;
+  }
+  repairCorruptWidgetState(node);
+  syncPanelFromWidgets(node, panel);
+  renderParts(node, panel, false);
+  updateFinalPrompt(node, panel, false);
+}
+
 function createPanel(node) {
   repairCorruptWidgetState(node);
   const panel = document.createElement("div");
@@ -297,6 +373,17 @@ function createPanel(node) {
       .wildcard-organizer input[type="text"] {
         box-sizing: border-box;
         width: 100%;
+        height: 30px;
+        padding: 0 8px;
+        color: #eee;
+        background: #151619;
+        border: 1px solid #33363d;
+        border-radius: 4px;
+        font: 12px/1.35 Arial, sans-serif;
+      }
+      .wildcard-organizer input[type="number"] {
+        box-sizing: border-box;
+        width: 88px;
         height: 30px;
         padding: 0 8px;
         color: #eee;
@@ -350,6 +437,15 @@ function createPanel(node) {
         color: #b9c0cc;
         font-weight: 700;
       }
+      .wildcard-organizer .final-label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .wildcard-organizer .final-label .label-text {
+        flex: 1;
+        min-width: 0;
+      }
       .wildcard-organizer .search-results {
         min-height: 180px;
         flex: 2 1 250px;
@@ -361,6 +457,10 @@ function createPanel(node) {
       .wildcard-organizer .preview {
         min-height: 150px;
         flex: 1 1 170px;
+      }
+      .wildcard-organizer .resolved-prompt {
+        min-height: 105px;
+        flex: 0 0 105px;
       }
       .wildcard-organizer .results {
         min-height: 0;
@@ -444,7 +544,8 @@ function createPanel(node) {
       }
       .wildcard-organizer .part span,
       .wildcard-organizer .result span { color: #aeb4bf; }
-      .wildcard-organizer .preview {
+      .wildcard-organizer .preview,
+      .wildcard-organizer .resolved-prompt {
         min-height: 0;
         margin: 0;
         padding: 8px;
@@ -454,6 +555,9 @@ function createPanel(node) {
         border: 1px solid #33363d;
         border-radius: 4px;
         white-space: pre-wrap;
+      }
+      .wildcard-organizer .resolved-prompt {
+        border-color: #42586f;
       }
     </style>
     <div class="filter-grid">
@@ -466,8 +570,15 @@ function createPanel(node) {
     <div class="toolbar builder-toolbar"></div>
     <textarea class="manual" placeholder="Manual prompt text to prepend to the generated prompt"></textarea>
     <div class="parts results"></div>
-    <div class="label">Preview / Final Prompt</div>
+    <div class="label">Wildcard Preview / Raw Prompt</div>
     <pre class="preview">Search for wildcards, add them to the builder, then group selected rows into choices.</pre>
+    <div class="label final-label">
+      <span class="label-text">Resolved Prompt</span>
+      <label class="check"><input class="resolve-output" type="checkbox"> send resolved text</label>
+      <input class="seed-input" type="number" min="0" max="4294967295" title="Resolution seed">
+      <button class="reroll-seed" type="button">Reroll</button>
+    </div>
+    <pre class="resolved-prompt">No prompt text yet.</pre>
   `;
 
   const toolbar = panel.querySelector(".search-toolbar");
@@ -550,6 +661,27 @@ function createPanel(node) {
     updateFinalPrompt(node, panel);
   });
 
+  const resolveOutput = panel.querySelector(".resolve-output");
+  resolveOutput.checked = boolValue(getWidget(node, "expand_wildcards")?.value, true);
+  resolveOutput.addEventListener("change", () => {
+    setWidgetValue(node, "expand_wildcards", resolveOutput.checked);
+    updateFinalPrompt(node, panel);
+  });
+
+  const seedInput = panel.querySelector(".seed-input");
+  seedInput.value = String(getWidget(node, "seed")?.value ?? 0);
+  seedInput.addEventListener("input", () => {
+    const seed = Math.max(0, Math.min(0xffffffff, Number(seedInput.value || 0)));
+    setWidgetValue(node, "seed", Number.isFinite(seed) ? seed : 0);
+    updateFinalPrompt(node, panel);
+  });
+  panel.querySelector(".reroll-seed").addEventListener("click", () => {
+    const seed = Math.floor(Math.random() * 0x100000000);
+    seedInput.value = String(seed);
+    setWidgetValue(node, "seed", seed);
+    updateFinalPrompt(node, panel);
+  });
+
   renderParts(node, panel, false);
   updateFinalPrompt(node, panel, false);
   return panel;
@@ -569,8 +701,8 @@ function queryParams(node, panel, refresh = false) {
   });
 }
 
-async function fetchJson(path) {
-  const response = await api.fetchApi(path);
+async function fetchJson(path, options) {
+  const response = await api.fetchApi(path, options);
   const data = await response.json();
   if (!response.ok || data.error) {
     throw new Error(data.error || response.statusText);
@@ -886,14 +1018,78 @@ function updateFinalPrompt(node, panel, showPreview = true) {
   const manual = panel.querySelector(".manual")?.value || "";
   setWidgetValue(node, "manual_text", manual);
   const prompt = buildPromptText(node, panel);
+  panel._rawPrompt = prompt;
   panel._lastPrompt = prompt;
   if (showPreview) {
     panel.querySelector(".preview").textContent = prompt || "No prompt text yet.";
   }
+  scheduleResolvedPrompt(node, panel);
+}
+
+function scheduleResolvedPrompt(node, panel) {
+  const outputEl = panel.querySelector(".resolved-prompt");
+  if (!outputEl) {
+    return;
+  }
+  clearTimeout(panel._resolveTimer);
+  panel._resolveTimer = setTimeout(() => updateResolvedPrompt(node, panel), RESOLVE_DEBOUNCE_MS);
+}
+
+async function updateResolvedPrompt(node, panel) {
+  const outputEl = panel.querySelector(".resolved-prompt");
+  const prompt = buildPromptText(node, panel);
+  const root = getWidget(node, "wildcard_folder")?.value || "";
+  const resolveOutput = boolValue(panel.querySelector(".resolve-output")?.checked);
+  const seed = Number(getWidget(node, "seed")?.value || 0);
+  const requestId = (panel._resolveRequestId || 0) + 1;
+  panel._resolveRequestId = requestId;
+  setWidgetValue(node, "expand_wildcards", resolveOutput);
+
+  if (!prompt.trim()) {
+    panel._lastPrompt = "";
+    panel._resolvedPrompt = "";
+    outputEl.textContent = "No prompt text yet.";
+    return;
+  }
+
+  if (!root.trim()) {
+    panel._lastPrompt = prompt;
+    panel._resolvedPrompt = prompt;
+    outputEl.textContent = prompt;
+    return;
+  }
+
+  outputEl.textContent = "Resolving prompt...";
+  try {
+    const data = await fetchJson("/wildcard_organizer/build", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        root,
+        parts_json: getWidget(node, "prompt_parts_json")?.value || "[]",
+        manual_text: panel.querySelector(".manual")?.value || "",
+        separator: getWidget(node, "separator")?.value || ", ",
+        seed,
+        expand_wildcards: resolveOutput,
+      }),
+    });
+    if (panel._resolveRequestId !== requestId) {
+      return;
+    }
+    panel._lastPrompt = data.prompt || "";
+    panel._resolvedPrompt = data.resolved_prompt || data.prompt || "";
+    outputEl.textContent = panel._resolvedPrompt || "No prompt text yet.";
+  } catch (error) {
+    if (panel._resolveRequestId !== requestId) {
+      return;
+    }
+    panel._lastPrompt = prompt;
+    outputEl.textContent = error.message;
+  }
 }
 
 async function copyPrompt(panel) {
-  const prompt = panel._lastPrompt || panel.querySelector(".preview").textContent || "";
+  const prompt = panel._lastPrompt || panel._resolvedPrompt || panel.querySelector(".resolved-prompt")?.textContent || panel.querySelector(".preview").textContent || "";
   await navigator.clipboard.writeText(prompt);
   panel.querySelector(".builder-toolbar .status").textContent = "Copied final prompt";
 }
@@ -938,6 +1134,15 @@ app.registerExtension({
         }
         this.setSize?.([this.size[0], this.computeSize?.()?.[1] || ORGANIZER_HEIGHT + 150]);
       });
+    };
+
+    const onConfigure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function () {
+      const result = onConfigure?.apply(this, arguments);
+      hideInternalWidgets(this);
+      ensureOrganizerWidget(this);
+      requestAnimationFrame(() => refreshOrganizerPanel(this));
+      return result;
     };
 
     const onRemoved = nodeType.prototype.onRemoved;

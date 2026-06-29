@@ -20,6 +20,7 @@ WILDCARD_EXTENSIONS = {".txt", ".yaml", ".yml"}
 PREVIEW_LIMIT = 20000
 SEARCH_LIMIT = 250
 WILDCARD_PATTERN = re.compile(r"__(.+?)__")
+CHOICE_PATTERN = re.compile(r"\{([^{}]+)\}")
 INDEX_CACHE = {}
 
 
@@ -397,6 +398,16 @@ def _choice_for_key(root, entries, key, rng):
     return rng.choice(choices)
 
 
+def _resolve_choice_groups(text, rng):
+    def replace(match):
+        options = [option.strip() for option in match.group(1).split("|") if option.strip()]
+        if not options:
+            return match.group(0)
+        return rng.choice(options)
+
+    return CHOICE_PATTERN.sub(replace, text or "")
+
+
 def _expand_text(root, text, seed=0, max_depth=20):
     entries = _wildcard_entries_by_key(root)
     rng = random.Random(int(seed))
@@ -404,6 +415,10 @@ def _expand_text(root, text, seed=0, max_depth=20):
 
     for _depth in range(max_depth):
         changed = False
+        with_choices = _resolve_choice_groups(expanded, rng)
+        if with_choices != expanded:
+            expanded = with_choices
+            changed = True
 
         def replace(match):
             nonlocal changed
@@ -411,7 +426,7 @@ def _expand_text(root, text, seed=0, max_depth=20):
             return _choice_for_key(root, entries, match.group(1), rng)
 
         expanded = WILDCARD_PATTERN.sub(replace, expanded)
-        if not changed or "__" not in expanded:
+        if not changed or ("__" not in expanded and "{" not in expanded):
             break
 
     return expanded
@@ -422,10 +437,13 @@ def _build_prompt(root, parts_json, manual_text="", separator=", ", seed=0, expa
     parts = _parts_from_json(parts_json)
     wildcard_prompt = _join_prompt_parts(parts, separator)
     final_prompt = _join_manual_text(manual_text, wildcard_prompt, separator)
+    resolved_prompt = _expand_text(root, final_prompt, seed) if root else final_prompt
     return {
-        "prompt": final_prompt,
+        "prompt": resolved_prompt if expand_wildcards else final_prompt,
+        "raw_prompt": final_prompt,
+        "resolved_prompt": resolved_prompt,
         "wildcard_prompt": wildcard_prompt,
-        "expanded_wildcards": wildcard_prompt,
+        "expanded_wildcards": resolved_prompt,
         "parts": parts,
     }
 
@@ -480,7 +498,7 @@ if PromptServer is not None and web is not None:
                 data.get("manual_text", ""),
                 data.get("separator", ", "),
                 data.get("seed", 0),
-                False,
+                _bool(data.get("expand_wildcards", False)),
             )
             return web.json_response(result)
         except Exception as exc:
@@ -500,7 +518,7 @@ class WildcardOrganizer:
                 "prompt_parts_json": ("STRING", {"default": "[]", "multiline": False}),
                 "separator": ("STRING", {"default": ", ", "multiline": False}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
-                "expand_wildcards": ("BOOLEAN", {"default": False}),
+                "expand_wildcards": ("BOOLEAN", {"default": True}),
                 "exclude_terms": ("STRING", {"default": "", "multiline": False}),
             }
         }
@@ -529,7 +547,7 @@ class WildcardOrganizer:
             return (prompt,)
 
         root = _resolve_root(wildcard_folder)
-        built = _build_prompt(root, prompt_parts_json, manual_text, separator, seed, False)
+        built = _build_prompt(root, prompt_parts_json, manual_text, separator, seed, _bool(expand_wildcards))
         return (built["prompt"],)
 
 
