@@ -979,7 +979,7 @@ function groupSelectedParts(node, panel) {
   const updated = parts.filter((_, index) => !selectedSet.has(index));
   updated.splice(firstIndex, 0, { type: "choice", choices });
   setParts(node, updated);
-  panel._selectedPartIndexes = new Set([firstIndex]);
+  panel._selectedPartIndexes = new Set();
   renderParts(node, panel, true);
   statusEl.textContent = `Grouped ${choices.length} choices`;
 }
