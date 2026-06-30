@@ -1,17 +1,38 @@
 # ComfyUI Wildcard Organizer
 
-A small ComfyUI custom node for browsing Impact Pack-style wildcard folders.
+![ComfyUI Wildcard Organizer cover](docs/images/cover.png)
 
-The node scans `.txt`, `.yaml`, and `.yml` wildcard files recursively, lets you search by file name/key, optionally searches file contents, previews the selected file or YAML entry, and copies the wildcard token in the format Impact Pack expects, such as:
+A small ComfyUI custom node for browsing wildcard folders, composing prompts, and seeing the exact resolved prompt text before it goes into your text encoder.
 
-```text
-__hair-color__
-__people/hair-color__
-```
+## Features
+
+- Search `.txt`, `.yaml`, and `.yml` wildcard files recursively.
+- Search by wildcard key, filename, or optionally file contents.
+- Preview wildcard file contents before adding a token.
+- Star frequently used wildcards as browser-local favorites.
+- Build prompts with draggable wildcard rows and literal text rows.
+- Group rows into ComfyUI choice expressions like `{red | blue | black}`.
+- Resolve `__wildcard__` tokens and `{choice | groups}` with a deterministic seed.
+- Toggle between sending resolved text or raw wildcard expressions downstream.
+
+## Screenshots
+
+![Search wildcard folders](docs/images/search-results.png)
+
+![Group rows into choices](docs/images/choice-group.png)
+
+![Resolved prompt preview](docs/images/resolved-prompt.png)
 
 ## Install
 
-Copy this folder into:
+Clone this repository into your ComfyUI custom nodes folder:
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/lokitsar/ComfyUI-WildcardOrganizer.git
+```
+
+Or download the repository as a zip and extract it so the folder is:
 
 ```text
 ComfyUI/custom_nodes/ComfyUI-WildcardOrganizer
@@ -19,68 +40,63 @@ ComfyUI/custom_nodes/ComfyUI-WildcardOrganizer
 
 Then restart ComfyUI.
 
-## Use
+## Basic Use
 
 1. Add `utils/wildcards -> Wildcard Organizer`.
 2. Set `wildcard_folder` to the folder that contains your wildcard files.
-3. Type a term in the organizer search box.
-4. Enable `Search contents` if you want the search to inspect file text too.
-5. Press `Search`, click a result to preview it, then press `Copy Token`.
-
-The copied value is the prompt token you can paste into a text encoder.
+3. Type a term in the search box.
+4. Enable `contents` if you want the search to inspect file text too.
+5. Select a result to preview it.
+6. Press `Add` to put it into the prompt builder.
+7. Add text rows or group selected rows into choices if useful.
+8. Check the `Resolved Prompt` box to see the exact sampled text.
+9. Connect the `prompt` output to a text encoder.
 
 The first search builds an in-memory index for the selected wildcard folder. Later searches reuse that index instead of walking the folder again. Press `Refresh Index` after editing wildcard files.
 
-Use `Exclude terms` in the organizer to filter out unwanted filenames/keys/content. Separate terms with commas, semicolons, or new lines.
-
-Favorites:
-
-- Select a wildcard and press `Star` to favorite or unfavorite it.
-- Press `Favorites` to show only favorites.
-- Favorites are saved in browser local storage and do not modify wildcard files.
+Use `Exclude terms` to filter unwanted filenames, keys, or content. Separate terms with commas, semicolons, or new lines.
 
 ## Prompt Builder
 
-The same node can compose the final prompt directly:
-
-1. Search for a wildcard and click a result.
-2. Press `Add` to put it into the builder.
-3. Drag builder rows to reorder them.
-4. Select two or more rows and press `Group Choice` to make a ComfyUI choice expression like `{__holiday__ | __setting__ | __holiday_theme__}` or `{black | red | blue}`.
-5. Use `Ungroup` to split a selected choice group back into separate rows.
-6. Use `Text part` plus `Add Text` for literal phrases such as `wearing` or `in`.
-7. Click builder rows to highlight them. Use `Remove Selected` to remove highlighted rows.
-8. Double-click a builder row to remove it quickly.
-9. Check the `Resolved Prompt` box at the bottom to see the exact text selected from wildcard files and choice groups.
-10. Connect the `prompt` output to a text encoder.
-
-The organizer is embedded directly in the node as a custom ComfyUI DOM widget. Resize the node wider if you want more room for search results, builder rows, and preview text.
-
-The node has one output:
-
-- `prompt`: the final composed prompt string.
-
-By default, the node resolves `__wildcard__` tokens and `{choice | groups}` itself before sending `prompt` downstream. Use the `send resolved text` checkbox beside the resolved prompt box to switch between resolved output and the raw wildcard expression. Use `Reroll` or edit the seed to pick a different deterministic wildcard outcome.
-
-Example raw builder expression using an empty joiner and text rows like `, wearing ` and `, in `:
+The builder can compose the final prompt directly:
 
 ```text
-{__hair-color__ | __eye-color__}, wearing {__shirt__ | __jacket__ | __dress__}, in __location__
+masterpiece, high quality, score_9, __body_eye_color__, eyes, __cc_hairstyle_set__, __body-short__, __setting-scifi__
 ```
 
-## Impact Pack Compatibility
+The raw prompt stays visible, while the resolved prompt shows the sampled output:
 
-This follows the wildcard naming behavior used by `ltdrdata/ComfyUI-Impact-Pack`:
+```text
+masterpiece, high quality, score_9, ((multicolored eyes, two-tone eyes):0.9), eyes, Voluminous apricot waves hairstyle, pygmy, A Pilot flying an advanced spaceship through an asteroid field
+```
 
-- `.txt` wildcard keys come from the file path relative to the wildcard folder, with the extension removed.
+Use `send resolved text` to choose whether the output sends the resolved prompt or the raw wildcard expression. Use `Reroll` or edit the seed to pick a different deterministic wildcard outcome.
+
+## Wildcard Naming
+
+The node emits normal ComfyUI wildcard tokens such as:
+
+```text
+__hair-color__
+__people/hair-color__
+```
+
+For `.txt` files, wildcard keys come from the file path relative to the wildcard folder, with the extension removed:
+
 - Backslashes are converted to `/`.
 - Spaces are converted to `-`.
 - Keys are lowercased.
-- `.yaml` and `.yml` files are expanded from their YAML keys, including nested keys.
 
-For example:
+For `.yaml` and `.yml` files, entries are expanded from YAML keys, including nested keys.
 
-```text
-wildcards/hair color.txt          -> __hair-color__
-wildcards/people/hair color.txt   -> __people/hair-color__
-```
+This path behavior is compatible with the common Impact Pack wildcard convention, but the node is intended for ordinary ComfyUI wildcard folders too.
+
+## Output
+
+The node has one output:
+
+- `prompt`: the composed prompt string, either resolved or raw depending on the `send resolved text` checkbox.
+
+## License
+
+MIT

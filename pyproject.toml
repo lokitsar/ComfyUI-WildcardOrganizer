@@ -1,0 +1,16 @@
+[project]
+name = "comfyui-wildcard-organizer"
+description = "A ComfyUI custom node for browsing wildcard folders, building prompts, and previewing resolved prompt text."
+version = "0.2.0"
+license = { file = "LICENSE" }
+dependencies = []
+readme = "README.md"
+
+[project.urls]
+Repository = "https://github.com/lokitsar/ComfyUI-WildcardOrganizer"
+
+[tool.comfy]
+PublisherId = "lokitsar"
+DisplayName = "ComfyUI Wildcard Organizer"
+Icon = "https://raw.githubusercontent.com/lokitsar/ComfyUI-WildcardOrganizer/main/docs/images/icon.png"
+Banner = "https://raw.githubusercontent.com/lokitsar/ComfyUI-WildcardOrganizer/main/docs/images/banner.png"
