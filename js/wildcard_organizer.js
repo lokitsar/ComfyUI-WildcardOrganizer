@@ -624,6 +624,7 @@ function createPanel(node) {
     makeButton("Copy Prompt", () => copyPrompt(panel)),
     makeButton("Group Choice", () => groupSelectedParts(node, panel)),
     makeButton("Ungroup", () => ungroupSelectedParts(node, panel)),
+    makeButton("Unselect", () => clearPartSelection(node, panel)),
     makeButton("Remove Selected", () => removeSelectedParts(node, panel)),
     makeButton("Clear", () => clearBuilder(node, panel)),
     Object.assign(document.createElement("input"), {
@@ -937,6 +938,14 @@ function renderParts(node, panel, showPrompt = false) {
   });
 
   updateFinalPrompt(node, panel, showPrompt);
+}
+
+function clearPartSelection(node, panel) {
+  const selectedCount = panel._selectedPartIndexes?.size || 0;
+  const statusEl = panel.querySelector(".builder-toolbar .status");
+  panel._selectedPartIndexes = new Set();
+  renderParts(node, panel, false);
+  statusEl.textContent = selectedCount ? "Selection cleared" : "No builder rows selected";
 }
 
 function removeSelectedParts(node, panel) {
