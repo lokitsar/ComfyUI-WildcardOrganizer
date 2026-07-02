@@ -9,7 +9,7 @@ A small ComfyUI custom node for browsing wildcard folders, composing prompts, an
 - Search `.txt`, `.yaml`, and `.yml` wildcard files recursively.
 - Search by wildcard key, filename, or optionally file contents.
 - Preview wildcard file contents before adding a token.
-- Star frequently used wildcards as browser-local favorites.
+- Star frequently used wildcards and custom text tags as browser-local favorites.
 - Build prompts with draggable wildcard rows and literal text rows.
 - Group rows into ComfyUI choice expressions like `{red | blue | black}`.
 - Resolve `__wildcard__` tokens and `{choice | groups}` with a deterministic seed.
@@ -48,13 +48,17 @@ Then restart ComfyUI.
 4. Enable `contents` if you want the search to inspect file text too.
 5. Select a result to preview it.
 6. Press `Add` to put it into the prompt builder.
-7. Add text rows or group selected rows into choices if useful.
-8. Check the `Resolved Prompt` box to see the exact sampled text.
-9. Connect the `prompt` output to a text encoder.
+7. Type your main prompt in the larger `Manual Prompt` box near the top.
+8. Add text rows or group selected rows into choices if useful.
+9. Select builder rows and press `Favorite` to save reusable custom tags or wildcards.
+10. Check the `Resolved Prompt` box to see the exact sampled text.
+11. Connect the `prompt` output to a text encoder.
 
 The first search builds an in-memory index for the selected wildcard folder. Later searches reuse that index instead of walking the folder again. Press `Refresh Index` after editing wildcard files.
 
 Use `Exclude terms` to filter unwanted filenames, keys, or content. Separate terms with commas, semicolons, or new lines.
+
+Click `Favorites` to show saved wildcard and text favorites. Click `Favorites` again to return to normal search results.
 
 ## Prompt Builder
 

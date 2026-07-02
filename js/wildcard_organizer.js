@@ -200,7 +200,13 @@ function saveFavorites(favorites) {
 }
 
 function favoriteId(item) {
-  return item?.wildcard || item?.key || "";
+  if (item?.wildcard) {
+    return item.wildcard;
+  }
+  if (item?.type === "text" || item?.text) {
+    return `text:${String(item.text || "").trim()}`;
+  }
+  return item?.key || "";
 }
 
 function isFavorite(item) {
@@ -217,20 +223,32 @@ function toggleFavorite(item) {
   if (favorites[id]) {
     delete favorites[id];
   } else {
-    favorites[id] = {
-      wildcard: item.wildcard,
-      key: item.key,
-      path: item.path,
-      relative_path: item.relative_path,
-      kind: item.kind,
-    };
+    if (item.wildcard) {
+      favorites[id] = {
+        type: "wildcard",
+        wildcard: item.wildcard,
+        key: item.key,
+        path: item.path,
+        relative_path: item.relative_path,
+        kind: item.kind,
+      };
+    } else {
+      favorites[id] = {
+        type: "text",
+        text: String(item.text || "").trim(),
+      };
+    }
   }
   saveFavorites(favorites);
   return Boolean(favorites[id]);
 }
 
 function favoriteItems() {
-  return Object.values(loadFavorites()).sort((a, b) => String(a.wildcard).localeCompare(String(b.wildcard)));
+  return Object.values(loadFavorites()).sort((a, b) => favoriteLabel(a).localeCompare(favoriteLabel(b)));
+}
+
+function favoriteLabel(item) {
+  return item?.wildcard || item?.text || item?.key || "";
 }
 
 function hideInternalWidgets(node) {
@@ -403,7 +421,6 @@ function createPanel(node) {
       .wildcard-organizer textarea {
         box-sizing: border-box;
         width: 100%;
-        min-height: 78px;
         resize: vertical;
         padding: 8px;
         color: #eee;
@@ -411,6 +428,12 @@ function createPanel(node) {
         border: 1px solid #33363d;
         border-radius: 4px;
         font: 12px/1.35 Arial, sans-serif;
+      }
+      .wildcard-organizer .manual {
+        min-height: 126px;
+        flex: 0 0 126px;
+        border-color: #42586f;
+        font-size: 13px;
       }
       .wildcard-organizer .toolbar {
         display: flex;
@@ -447,8 +470,8 @@ function createPanel(node) {
         min-width: 0;
       }
       .wildcard-organizer .search-results {
-        min-height: 180px;
-        flex: 2 1 250px;
+        min-height: 130px;
+        flex: 1.55 1 190px;
       }
       .wildcard-organizer .parts {
         min-height: 150px;
@@ -566,9 +589,10 @@ function createPanel(node) {
       <label class="check"><input class="contents-input" type="checkbox"> contents</label>
     </div>
     <div class="toolbar search-toolbar"></div>
+    <div class="label">Manual Prompt</div>
+    <textarea class="manual" placeholder="Type your main prompt text here"></textarea>
     <div class="results search-results"></div>
     <div class="toolbar builder-toolbar"></div>
-    <textarea class="manual" placeholder="Manual prompt text to prepend to the generated prompt"></textarea>
     <div class="parts results"></div>
     <div class="label">Wildcard Preview / Raw Prompt</div>
     <pre class="preview">Search for wildcards, add them to the builder, then group selected rows into choices.</pre>
@@ -625,6 +649,7 @@ function createPanel(node) {
     makeButton("Group Choice", () => groupSelectedParts(node, panel)),
     makeButton("Ungroup", () => ungroupSelectedParts(node, panel)),
     makeButton("Unselect", () => clearPartSelection(node, panel)),
+    makeButton("Favorite", () => favoriteSelectedParts(node, panel)),
     makeButton("Remove Selected", () => removeSelectedParts(node, panel)),
     makeButton("Clear", () => clearBuilder(node, panel)),
     Object.assign(document.createElement("input"), {
@@ -715,6 +740,7 @@ async function runSearch(node, panel) {
   const resultsEl = panel.querySelector(".search-results");
   const previewEl = panel.querySelector(".preview");
   const statusEl = panel.querySelector(".search-toolbar .status");
+  panel._showingFavorites = false;
   statusEl.textContent = "Searching...";
   resultsEl.replaceChildren();
   setWidgetValue(node, "search", panel.querySelector(".search-input")?.value || "");
@@ -745,19 +771,26 @@ function renderSearchResults(node, panel, results) {
     row.className = "result";
     row.classList.toggle("is-favorite", isFavorite(result));
     row.innerHTML = `<strong></strong><span></span>`;
-    row.querySelector("strong").textContent = result.wildcard;
-    row.querySelector("span").textContent = result.relative_path;
+    row.querySelector("strong").textContent = favoriteLabel(result);
+    row.querySelector("span").textContent = result.relative_path || (result.text ? "Text favorite" : "");
     row.addEventListener("click", () => selectResult(node, panel, row, result));
     resultsEl.append(row);
   }
 }
 
 function showFavorites(node, panel) {
+  if (panel._showingFavorites) {
+    panel._showingFavorites = false;
+    runSearch(node, panel);
+    return;
+  }
+
+  panel._showingFavorites = true;
   const favorites = favoriteItems();
   const statusEl = panel.querySelector(".search-toolbar .status");
   renderSearchResults(node, panel, favorites);
   statusEl.textContent = `${favorites.length} favorite${favorites.length === 1 ? "" : "s"}`;
-  panel.querySelector(".preview").textContent = favorites.length ? "Showing favorites." : "No favorites yet.";
+  panel.querySelector(".preview").textContent = favorites.length ? "Showing favorites. Click Favorites again to return to search." : "No favorites yet.";
 }
 
 function starSelected(node, panel) {
@@ -770,11 +803,14 @@ function starSelected(node, panel) {
 
   const starred = toggleFavorite(selected);
   for (const row of panel.querySelectorAll(".result")) {
-    if (row.querySelector("strong")?.textContent === selected.wildcard) {
+    if (row.querySelector("strong")?.textContent === favoriteLabel(selected)) {
       row.classList.toggle("is-favorite", starred);
     }
   }
-  statusEl.textContent = starred ? `Starred ${selected.wildcard}` : `Unstarred ${selected.wildcard}`;
+  if (panel._showingFavorites) {
+    renderSearchResults(node, panel, favoriteItems());
+  }
+  statusEl.textContent = starred ? `Starred ${favoriteLabel(selected)}` : `Unstarred ${favoriteLabel(selected)}`;
 }
 
 async function refreshIndex(node, panel) {
@@ -807,10 +843,14 @@ async function selectResult(node, panel, row, result) {
   }
   row.classList.add("selected");
   panel._selectedWildcard = result;
-  setWidgetValue(node, "selected_wildcard", result.wildcard);
+  setWidgetValue(node, "selected_wildcard", result.wildcard || result.text || "");
 
   const root = getWidget(node, "wildcard_folder")?.value || "";
   const previewEl = panel.querySelector(".preview");
+  if (result.text) {
+    previewEl.textContent = result.text;
+    return;
+  }
   if (!result.path) {
     previewEl.textContent = "This favorite is missing its source path. Refresh search results and star it again.";
     return;
@@ -830,15 +870,15 @@ function addSelected(node, panel) {
   const selected = panel._selectedWildcard;
   const statusEl = panel.querySelector(".search-toolbar .status");
   if (!selected) {
-    statusEl.textContent = "Select a wildcard first";
+    statusEl.textContent = "Select a wildcard or favorite first";
     return;
   }
 
   const parts = getParts(node);
-  parts.push(wildcardPart(selected));
+  parts.push(selected.text ? textPart(selected) : wildcardPart(selected));
   setParts(node, parts);
   renderParts(node, panel, true);
-  statusEl.textContent = `Added ${selected.wildcard}`;
+  statusEl.textContent = `Added ${favoriteLabel(selected)}`;
 }
 
 function addTextPart(node, panel) {
@@ -946,6 +986,52 @@ function clearPartSelection(node, panel) {
   panel._selectedPartIndexes = new Set();
   renderParts(node, panel, false);
   statusEl.textContent = selectedCount ? "Selection cleared" : "No builder rows selected";
+}
+
+function favoriteSelectedParts(node, panel) {
+  const selected = [...(panel._selectedPartIndexes || new Set())].sort((a, b) => a - b);
+  const statusEl = panel.querySelector(".builder-toolbar .status");
+  if (!selected.length) {
+    statusEl.textContent = "Select builder rows first";
+    return;
+  }
+
+  const parts = getParts(node);
+  const favorites = loadFavorites();
+  let added = 0;
+  let skipped = 0;
+
+  for (const index of selected) {
+    const part = parts[index];
+    for (const option of choiceOptions(part)) {
+      const id = favoriteId(option);
+      if (!id || favorites[id]) {
+        skipped += 1;
+        continue;
+      }
+
+      favorites[id] = option.wildcard
+        ? {
+            type: "wildcard",
+            wildcard: option.wildcard,
+            key: option.key,
+            path: option.path,
+            relative_path: option.relative_path,
+            kind: option.kind,
+          }
+        : {
+            type: "text",
+            text: String(option.text || "").trim(),
+          };
+      added += 1;
+    }
+  }
+
+  saveFavorites(favorites);
+  if (panel._showingFavorites) {
+    renderSearchResults(node, panel, favoriteItems());
+  }
+  statusEl.textContent = added ? `Favorited ${added} row${added === 1 ? "" : "s"}` : skipped ? "Selected rows are already favorites" : "No favoriteable rows selected";
 }
 
 function removeSelectedParts(node, panel) {
@@ -1116,13 +1202,14 @@ async function copySelected(node, panel) {
   const selected = panel._selectedWildcard;
   const statusEl = panel.querySelector(".search-toolbar .status");
   if (!selected) {
-    statusEl.textContent = "Select a wildcard first";
+    statusEl.textContent = "Select a wildcard or favorite first";
     return;
   }
 
-  await navigator.clipboard.writeText(selected.wildcard);
-  setWidgetValue(node, "selected_wildcard", selected.wildcard);
-  statusEl.textContent = `Copied ${selected.wildcard}`;
+  const text = selected.wildcard || selected.text || "";
+  await navigator.clipboard.writeText(text);
+  setWidgetValue(node, "selected_wildcard", text);
+  statusEl.textContent = `Copied ${favoriteLabel(selected)}`;
 }
 
 app.registerExtension({
