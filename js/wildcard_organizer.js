@@ -628,6 +628,7 @@ function createPanel(node) {
     <div class="toolbar search-toolbar"></div>
     <div class="label">Manual Prompt</div>
     <textarea class="manual" placeholder="Type your main prompt text here"></textarea>
+    <div class="results search-results"></div>
     <div class="toolbar recipe-toolbar">
       <input class="recipe-name" type="text" placeholder="Recipe name">
       <button class="save-recipe" type="button">Save Recipe</button>
@@ -636,7 +637,6 @@ function createPanel(node) {
       <button class="delete-recipe" type="button">Delete</button>
       <div class="status">Recipes</div>
     </div>
-    <div class="results search-results"></div>
     <div class="toolbar builder-toolbar"></div>
     <div class="parts results"></div>
     <div class="label">Wildcard Preview / Raw Prompt</div>
