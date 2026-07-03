@@ -85,6 +85,51 @@ function parseParts(value) {
   }
 }
 
+function extractEmbeddedParts(value) {
+  const text = String(value || "");
+  const start = text.indexOf("[");
+  if (start < 0) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        const rawParts = text.slice(start, index + 1);
+        const parts = parseParts(rawParts);
+        if (!parts?.length) {
+          return null;
+        }
+        const manual = `${text.slice(0, start)}${text.slice(index + 1)}`.trim();
+        return { manual, parts };
+      }
+    }
+  }
+
+  return null;
+}
+
 function isUsablePart(part) {
   if (!part || typeof part !== "object") {
     return false;
@@ -174,12 +219,17 @@ function repairCorruptWidgetState(node) {
   const partsRaw = String(partsWidget?.value || "").trim();
   const manualParts = parseParts(manual);
   const currentParts = parseParts(partsRaw);
+  const embedded = extractEmbeddedParts(manual);
 
   if (manualParts?.length) {
     if (!currentParts?.length) {
       setParts(node, manualParts);
     }
     setWidgetValue(node, "manual_text", "");
+  } else if (embedded?.parts?.length) {
+    const mergedParts = currentParts?.length ? [...embedded.parts, ...currentParts] : embedded.parts;
+    setParts(node, mergedParts);
+    setWidgetValue(node, "manual_text", embedded.manual);
   }
 
   if (!manualParts?.length && partsRaw && !currentParts && /^__.+__$/.test(partsRaw)) {

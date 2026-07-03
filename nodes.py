@@ -324,15 +324,59 @@ def _parts_from_json(parts_json):
     return parts
 
 
+def _extract_embedded_parts(text):
+    text = text or ""
+    start = text.find("[")
+    if start < 0:
+        return None, []
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+            continue
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                parts = _parts_from_json(text[start : index + 1])
+                if not parts:
+                    return None, []
+                manual_text = f"{text[:start]}{text[index + 1:]}".strip()
+                return manual_text, parts
+
+    return None, []
+
+
 def _sanitize_build_inputs(parts_json, manual_text):
     manual_text = manual_text or ""
     parts = _parts_from_json(parts_json)
     manual_parts = _parts_from_json(manual_text.strip()) if manual_text.strip().startswith("[") else []
+    embedded_manual_text, embedded_parts = _extract_embedded_parts(manual_text)
 
     if manual_parts:
         if not parts:
             parts_json = json.dumps(manual_parts, ensure_ascii=False)
         manual_text = ""
+    elif embedded_parts:
+        if parts:
+            parts_json = json.dumps(embedded_parts + parts, ensure_ascii=False)
+        else:
+            parts_json = json.dumps(embedded_parts, ensure_ascii=False)
+        manual_text = embedded_manual_text or ""
 
     if isinstance(parts_json, str) and WILDCARD_PATTERN.fullmatch(parts_json.strip()) and not parts:
         parts_json = "[]"
