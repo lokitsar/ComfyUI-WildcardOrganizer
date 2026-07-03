@@ -568,7 +568,7 @@ class WildcardOrganizer:
                 "manual_text": ("STRING", {"default": "", "multiline": False}),
                 "prompt_parts_json": ("STRING", {"default": "[]", "multiline": False}),
                 "separator": ("STRING", {"default": ", ", "multiline": False}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF, "control_after_generate": True}),
                 "expand_wildcards": ("BOOLEAN", {"default": True}),
                 "exclude_terms": ("STRING", {"default": "", "multiline": False}),
                 "manual_position": (["prepend", "append"], {"default": "prepend"}),
