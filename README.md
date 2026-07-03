@@ -50,7 +50,7 @@ Then restart ComfyUI.
 6. Press `Add` to put it into the prompt builder.
 7. Type your main prompt in the larger `Manual Prompt` box near the top.
 8. Add text rows or group selected rows into choices if useful.
-9. Select builder rows and press `Favorite` to save reusable custom tags or wildcards.
+9. Select builder rows and press `Star` to save reusable custom tags or wildcards.
 10. Check the `Resolved Prompt` box to see the exact sampled text.
 11. Connect the `prompt` output to a text encoder.
 

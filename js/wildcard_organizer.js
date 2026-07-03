@@ -649,7 +649,7 @@ function createPanel(node) {
     makeButton("Group Choice", () => groupSelectedParts(node, panel)),
     makeButton("Ungroup", () => ungroupSelectedParts(node, panel)),
     makeButton("Unselect", () => clearPartSelection(node, panel)),
-    makeButton("Favorite", () => favoriteSelectedParts(node, panel)),
+    makeButton("Star", () => favoriteSelectedParts(node, panel)),
     makeButton("Remove Selected", () => removeSelectedParts(node, panel)),
     makeButton("Clear", () => clearBuilder(node, panel)),
     Object.assign(document.createElement("input"), {
@@ -1031,7 +1031,7 @@ function favoriteSelectedParts(node, panel) {
   if (panel._showingFavorites) {
     renderSearchResults(node, panel, favoriteItems());
   }
-  statusEl.textContent = added ? `Favorited ${added} row${added === 1 ? "" : "s"}` : skipped ? "Selected rows are already favorites" : "No favoriteable rows selected";
+  statusEl.textContent = added ? `Starred ${added} row${added === 1 ? "" : "s"}` : skipped ? "Selected rows are already starred" : "No rows selected that can be starred";
 }
 
 function removeSelectedParts(node, panel) {
