@@ -688,12 +688,6 @@ function createPanel(node) {
         border-color: #42586f;
       }
     </style>
-    <div class="filter-grid">
-      <input class="search-input" type="text" placeholder="Search filenames">
-      <input class="exclude-input" type="text" placeholder="Exclude terms">
-      <label class="check"><input class="contents-input" type="checkbox"> contents</label>
-    </div>
-    <div class="toolbar search-toolbar"></div>
     <div class="label manual-label">
       <span class="label-text">Manual Prompt</span>
       <select class="manual-position" title="Manual prompt position">
@@ -702,6 +696,12 @@ function createPanel(node) {
       </select>
     </div>
     <textarea class="manual" placeholder="Type your main prompt text here"></textarea>
+    <div class="filter-grid">
+      <input class="search-input" type="text" placeholder="Search filenames">
+      <input class="exclude-input" type="text" placeholder="Exclude terms">
+      <label class="check"><input class="contents-input" type="checkbox"> contents</label>
+    </div>
+    <div class="toolbar search-toolbar"></div>
     <div class="results search-results"></div>
     <div class="toolbar recipe-toolbar">
       <input class="recipe-name" type="text" placeholder="Recipe name">
@@ -736,6 +736,7 @@ function createPanel(node) {
     makeButton("Favorites", () => showFavorites(node, panel)),
     makeButton("Star", () => starSelected(node, panel)),
     makeButton("Add", () => addSelected(node, panel)),
+    makeButton("Unselect", () => clearWildcardSelection(node, panel)),
     makeButton("Copy Token", () => copySelected(node, panel)),
     status
   );
@@ -998,6 +999,16 @@ async function selectResult(node, panel, row, result) {
   } catch (error) {
     previewEl.textContent = error.message;
   }
+}
+
+function clearWildcardSelection(node, panel) {
+  const hadSelection = Boolean(panel._selectedWildcard);
+  for (const item of panel.querySelectorAll(".result")) {
+    item.classList.remove("selected");
+  }
+  panel._selectedWildcard = null;
+  setWidgetValue(node, "selected_wildcard", "");
+  panel.querySelector(".search-toolbar .status").textContent = hadSelection ? "Wildcard selection cleared" : "No wildcard selected";
 }
 
 function addSelected(node, panel) {
