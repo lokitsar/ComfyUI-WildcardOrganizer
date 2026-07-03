@@ -14,7 +14,8 @@ const HIDDEN_WIDGETS = new Set([
   "expand_wildcards",
 ]);
 const FAVORITES_KEY = "ComfyUI.WildcardOrganizer.favorites";
-const ORGANIZER_HEIGHT = 880;
+const RECIPES_KEY = "ComfyUI.WildcardOrganizer.recipes";
+const ORGANIZER_HEIGHT = 940;
 const ORGANIZER_DEFAULT_WIDTH = 920;
 const RESOLVE_DEBOUNCE_MS = 250;
 
@@ -251,6 +252,23 @@ function favoriteLabel(item) {
   return item?.wildcard || item?.text || item?.key || "";
 }
 
+function loadRecipes() {
+  try {
+    const recipes = JSON.parse(localStorage.getItem(RECIPES_KEY) || "{}");
+    return recipes && typeof recipes === "object" && !Array.isArray(recipes) ? recipes : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRecipes(recipes) {
+  localStorage.setItem(RECIPES_KEY, JSON.stringify(recipes));
+}
+
+function recipeNames() {
+  return Object.keys(loadRecipes()).sort((a, b) => a.localeCompare(b));
+}
+
 function hideInternalWidgets(node) {
   for (const widget of node.widgets || []) {
     if (!HIDDEN_WIDGETS.has(widget.name)) {
@@ -336,6 +354,7 @@ function syncPanelFromWidgets(node, panel) {
   if (seedInput) {
     seedInput.value = String(getWidget(node, "seed")?.value ?? 0);
   }
+  refreshRecipeSelect(panel);
 }
 
 function refreshOrganizerPanel(node) {
@@ -410,6 +429,16 @@ function createPanel(node) {
         border-radius: 4px;
         font: 12px/1.35 Arial, sans-serif;
       }
+      .wildcard-organizer select {
+        box-sizing: border-box;
+        height: 30px;
+        padding: 0 8px;
+        color: #eee;
+        background: #151619;
+        border: 1px solid #33363d;
+        border-radius: 4px;
+        font: 12px/1.35 Arial, sans-serif;
+      }
       .wildcard-organizer .check {
         display: flex;
         gap: 6px;
@@ -455,6 +484,14 @@ function createPanel(node) {
       .wildcard-organizer .text-part-input {
         flex: 1 1 120px;
         min-width: 90px;
+      }
+      .wildcard-organizer .recipe-name {
+        flex: 1 1 180px;
+        min-width: 110px;
+      }
+      .wildcard-organizer .recipe-select {
+        flex: 1 1 180px;
+        min-width: 120px;
       }
       .wildcard-organizer .label {
         color: #b9c0cc;
@@ -591,6 +628,14 @@ function createPanel(node) {
     <div class="toolbar search-toolbar"></div>
     <div class="label">Manual Prompt</div>
     <textarea class="manual" placeholder="Type your main prompt text here"></textarea>
+    <div class="toolbar recipe-toolbar">
+      <input class="recipe-name" type="text" placeholder="Recipe name">
+      <button class="save-recipe" type="button">Save Recipe</button>
+      <select class="recipe-select" title="Saved prompt recipes"></select>
+      <button class="load-recipe" type="button">Load</button>
+      <button class="delete-recipe" type="button">Delete</button>
+      <div class="status">Recipes</div>
+    </div>
     <div class="results search-results"></div>
     <div class="toolbar builder-toolbar"></div>
     <div class="parts results"></div>
@@ -685,6 +730,15 @@ function createPanel(node) {
   manual.addEventListener("input", () => {
     setWidgetValue(node, "manual_text", manual.value);
     updateFinalPrompt(node, panel);
+  });
+
+  refreshRecipeSelect(panel);
+  panel.querySelector(".save-recipe").addEventListener("click", () => saveCurrentRecipe(node, panel));
+  panel.querySelector(".load-recipe").addEventListener("click", () => loadSelectedRecipe(node, panel));
+  panel.querySelector(".delete-recipe").addEventListener("click", () => deleteSelectedRecipe(panel));
+  panel.querySelector(".recipe-select").addEventListener("change", () => {
+    const name = panel.querySelector(".recipe-select")?.value || "";
+    panel.querySelector(".recipe-name").value = name;
   });
 
   const resolveOutput = panel.querySelector(".resolve-output");
@@ -1032,6 +1086,117 @@ function favoriteSelectedParts(node, panel) {
     renderSearchResults(node, panel, favoriteItems());
   }
   statusEl.textContent = added ? `Starred ${added} row${added === 1 ? "" : "s"}` : skipped ? "Selected rows are already starred" : "No rows selected that can be starred";
+}
+
+function refreshRecipeSelect(panel, selectedName = "") {
+  const select = panel?.querySelector(".recipe-select");
+  if (!select) {
+    return;
+  }
+
+  const names = recipeNames();
+  select.replaceChildren();
+  select.append(Object.assign(document.createElement("option"), { value: "", textContent: names.length ? "Select recipe" : "No saved recipes" }));
+  for (const name of names) {
+    select.append(Object.assign(document.createElement("option"), { value: name, textContent: name }));
+  }
+  select.value = selectedName && names.includes(selectedName) ? selectedName : "";
+}
+
+function currentRecipe(node, panel) {
+  return {
+    version: 1,
+    manual_text: panel.querySelector(".manual")?.value || "",
+    prompt_parts: getParts(node),
+    separator: getWidget(node, "separator")?.value || ", ",
+    seed: Number(getWidget(node, "seed")?.value || 0),
+    expand_wildcards: boolValue(panel.querySelector(".resolve-output")?.checked, true),
+  };
+}
+
+function saveCurrentRecipe(node, panel) {
+  const nameInput = panel.querySelector(".recipe-name");
+  const statusEl = panel.querySelector(".recipe-toolbar .status");
+  const name = String(nameInput?.value || "").trim();
+  if (!name) {
+    statusEl.textContent = "Name the recipe first";
+    return;
+  }
+
+  const recipes = loadRecipes();
+  recipes[name] = currentRecipe(node, panel);
+  saveRecipes(recipes);
+  refreshRecipeSelect(panel, name);
+  statusEl.textContent = `Saved ${name}`;
+}
+
+function applyRecipe(node, panel, recipe) {
+  const manual = panel.querySelector(".manual");
+  const joiner = panel.querySelector(".joiner-input");
+  const resolveOutput = panel.querySelector(".resolve-output");
+  const seedInput = panel.querySelector(".seed-input");
+  const parts = Array.isArray(recipe.prompt_parts) ? recipe.prompt_parts : [];
+  const separator = typeof recipe.separator === "string" ? recipe.separator : ", ";
+  const seed = Number.isFinite(Number(recipe.seed)) ? Number(recipe.seed) : 0;
+  const expand = boolValue(recipe.expand_wildcards, true);
+
+  if (manual) {
+    manual.value = recipe.manual_text || "";
+  }
+  if (joiner) {
+    joiner.value = separator;
+  }
+  if (resolveOutput) {
+    resolveOutput.checked = expand;
+  }
+  if (seedInput) {
+    seedInput.value = String(seed);
+  }
+
+  setWidgetValue(node, "manual_text", recipe.manual_text || "");
+  setWidgetValue(node, "separator", separator);
+  setWidgetValue(node, "seed", seed);
+  setWidgetValue(node, "expand_wildcards", expand);
+  setParts(node, parts);
+  panel._selectedPartIndexes = new Set();
+  renderParts(node, panel, true);
+}
+
+function loadSelectedRecipe(node, panel) {
+  const name = panel.querySelector(".recipe-select")?.value || "";
+  const statusEl = panel.querySelector(".recipe-toolbar .status");
+  if (!name) {
+    statusEl.textContent = "Select a recipe first";
+    return;
+  }
+
+  const recipe = loadRecipes()[name];
+  if (!recipe) {
+    refreshRecipeSelect(panel);
+    statusEl.textContent = "Recipe not found";
+    return;
+  }
+
+  panel.querySelector(".recipe-name").value = name;
+  applyRecipe(node, panel, recipe);
+  statusEl.textContent = `Loaded ${name}`;
+}
+
+function deleteSelectedRecipe(panel) {
+  const select = panel.querySelector(".recipe-select");
+  const name = select?.value || "";
+  const statusEl = panel.querySelector(".recipe-toolbar .status");
+  if (!name) {
+    statusEl.textContent = "Select a recipe first";
+    return;
+  }
+
+  const recipes = loadRecipes();
+  delete recipes[name];
+  saveRecipes(recipes);
+  refreshRecipeSelect(panel);
+  panel.querySelector(".recipe-name").value = "";
+  statusEl.textContent = `Deleted ${name}`;
 }
 
 function removeSelectedParts(node, panel) {

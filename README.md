@@ -10,6 +10,7 @@ A small ComfyUI custom node for browsing wildcard folders, composing prompts, an
 - Search by wildcard key, filename, or optionally file contents.
 - Preview wildcard file contents before adding a token.
 - Star frequently used wildcards and custom text tags as browser-local favorites.
+- Save and load full prompt recipes.
 - Build prompts with draggable wildcard rows and literal text rows.
 - Group rows into ComfyUI choice expressions like `{red | blue | black}`.
 - Resolve `__wildcard__` tokens and `{choice | groups}` with a deterministic seed.
@@ -40,25 +41,46 @@ ComfyUI/custom_nodes/ComfyUI-WildcardOrganizer
 
 Then restart ComfyUI.
 
-## Basic Use
+## Build Your First Prompt
 
-1. Add `utils/wildcards -> Wildcard Organizer`.
+1. Add `utils/wildcards -> Wildcard Organizer` to your workflow.
 2. Set `wildcard_folder` to the folder that contains your wildcard files.
-3. Type a term in the search box.
-4. Enable `contents` if you want the search to inspect file text too.
-5. Select a result to preview it.
-6. Press `Add` to put it into the prompt builder.
-7. Type your main prompt in the larger `Manual Prompt` box near the top.
-8. Add text rows or group selected rows into choices if useful.
-9. Select builder rows and press `Star` to save reusable custom tags or wildcards.
-10. Check the `Resolved Prompt` box to see the exact sampled text.
-11. Connect the `prompt` output to a text encoder.
+3. Type your base prompt in `Manual Prompt`.
+4. Search for a wildcard, such as `hair`, `outfit`, or `background`.
+5. Click a search result to preview what is inside it.
+6. Press `Add` to put that wildcard into the builder.
+7. Use `Text part` and `Add Text` for small reusable tags like `eyes`, `smiling`, or `cinematic lighting`.
+8. Select two or more builder rows and press `Group Choice` when you want one random option from a group.
+9. Look at `Wildcard Preview / Raw Prompt` to see the wildcard expression.
+10. Look at `Resolved Prompt` to see the actual text that will be sent to the next node.
+11. Connect the `prompt` output to your text encoder.
 
 The first search builds an in-memory index for the selected wildcard folder. Later searches reuse that index instead of walking the folder again. Press `Refresh Index` after editing wildcard files.
 
 Use `Exclude terms` to filter unwanted filenames, keys, or content. Separate terms with commas, semicolons, or new lines.
 
-Click `Favorites` to show saved wildcard and text favorites. Click `Favorites` again to return to normal search results.
+## Favorites
+
+Use favorites for small pieces you reuse often.
+
+1. Select a wildcard search result and press `Star`.
+2. Or select a builder row, such as a custom text tag, and press `Star`.
+3. Press `Favorites` to show saved wildcards and text tags.
+4. Press `Favorites` again to return to normal search results.
+
+Favorites are saved in your browser local storage. They do not edit your wildcard files.
+
+## Prompt Recipes
+
+Use recipes for whole prompt setups you want to reuse later.
+
+1. Build a prompt with manual text, wildcard rows, text rows, and choice groups.
+2. Type a recipe name, such as `Pony portrait base`.
+3. Press `Save Recipe`.
+4. Pick the recipe from the dropdown later.
+5. Press `Load` to restore the manual prompt, builder rows, separator, seed, and resolved-output setting.
+
+Recipes are also saved in browser local storage.
 
 ## Prompt Builder
 
