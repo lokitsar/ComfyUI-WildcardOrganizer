@@ -45,7 +45,7 @@ Then restart ComfyUI.
 
 1. Add `utils/wildcards -> Wildcard Organizer` to your workflow.
 2. Set `wildcard_folder` to the folder that contains your wildcard files.
-3. Type your base prompt in `Manual Prompt`.
+3. Type your base prompt in `Manual Prompt`, then choose `Prepend` or `Append` to place it before or after the builder rows.
 4. Search for a wildcard, such as `hair`, `outfit`, or `background`.
 5. Click a search result to preview what is inside it.
 6. Press `Add` to put that wildcard into the builder.
@@ -78,7 +78,7 @@ Use recipes for whole prompt setups you want to reuse later.
 2. Type a recipe name, such as `Pony portrait base`.
 3. Press `Save Recipe`.
 4. Pick the recipe from the dropdown later.
-5. Press `Load` to restore the manual prompt, builder rows, separator, seed, and resolved-output setting.
+5. Press `Load` to restore the manual prompt, manual prompt position, builder rows, separator, seed, and resolved-output setting.
 
 Recipes are also saved in browser local storage.
 

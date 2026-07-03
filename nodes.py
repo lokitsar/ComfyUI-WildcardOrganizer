@@ -360,10 +360,16 @@ def _join_prompt_parts(parts, separator):
     return separator.join(text for text in (_part_prompt(part) for part in parts) if text)
 
 
-def _join_manual_text(manual_text, generated_text, separator):
+def _manual_position(value):
+    return "append" if str(value or "").lower() == "append" else "prepend"
+
+
+def _join_manual_text(manual_text, generated_text, separator, manual_position="prepend"):
     manual_text = (manual_text or "").strip()
     generated_text = (generated_text or "").strip()
     if manual_text and generated_text:
+        if _manual_position(manual_position) == "append":
+            return f"{generated_text}{separator}{manual_text}"
         return f"{manual_text}{separator}{generated_text}"
     return manual_text or generated_text
 
@@ -432,11 +438,11 @@ def _expand_text(root, text, seed=0, max_depth=20):
     return expanded
 
 
-def _build_prompt(root, parts_json, manual_text="", separator=", ", seed=0, expand_wildcards=False):
+def _build_prompt(root, parts_json, manual_text="", separator=", ", seed=0, expand_wildcards=False, manual_position="prepend"):
     parts_json, manual_text = _sanitize_build_inputs(parts_json, manual_text)
     parts = _parts_from_json(parts_json)
     wildcard_prompt = _join_prompt_parts(parts, separator)
-    final_prompt = _join_manual_text(manual_text, wildcard_prompt, separator)
+    final_prompt = _join_manual_text(manual_text, wildcard_prompt, separator, manual_position)
     resolved_prompt = _expand_text(root, final_prompt, seed) if root else final_prompt
     return {
         "prompt": resolved_prompt if expand_wildcards else final_prompt,
@@ -499,6 +505,7 @@ if PromptServer is not None and web is not None:
                 data.get("separator", ", "),
                 data.get("seed", 0),
                 _bool(data.get("expand_wildcards", False)),
+                data.get("manual_position", "prepend"),
             )
             return web.json_response(result)
         except Exception as exc:
@@ -515,6 +522,7 @@ class WildcardOrganizer:
                 "include_file_contents": ("BOOLEAN", {"default": False}),
                 "selected_wildcard": ("STRING", {"default": "", "multiline": False}),
                 "manual_text": ("STRING", {"default": "", "multiline": False}),
+                "manual_position": (["prepend", "append"], {"default": "prepend"}),
                 "prompt_parts_json": ("STRING", {"default": "[]", "multiline": False}),
                 "separator": ("STRING", {"default": ", ", "multiline": False}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
@@ -535,6 +543,7 @@ class WildcardOrganizer:
         include_file_contents=False,
         selected_wildcard="",
         manual_text="",
+        manual_position="prepend",
         prompt_parts_json="[]",
         separator=", ",
         seed=0,
@@ -543,11 +552,11 @@ class WildcardOrganizer:
     ):
         if not wildcard_folder:
             wildcard_prompt = _join_prompt_parts(_parts_from_json(prompt_parts_json), separator)
-            prompt = _join_manual_text(manual_text, wildcard_prompt, separator)
+            prompt = _join_manual_text(manual_text, wildcard_prompt, separator, manual_position)
             return (prompt,)
 
         root = _resolve_root(wildcard_folder)
-        built = _build_prompt(root, prompt_parts_json, manual_text, separator, seed, _bool(expand_wildcards))
+        built = _build_prompt(root, prompt_parts_json, manual_text, separator, seed, _bool(expand_wildcards), manual_position)
         return (built["prompt"],)
 
 
