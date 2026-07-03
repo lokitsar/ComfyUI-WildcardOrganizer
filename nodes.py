@@ -522,12 +522,12 @@ class WildcardOrganizer:
                 "include_file_contents": ("BOOLEAN", {"default": False}),
                 "selected_wildcard": ("STRING", {"default": "", "multiline": False}),
                 "manual_text": ("STRING", {"default": "", "multiline": False}),
-                "manual_position": (["prepend", "append"], {"default": "prepend"}),
                 "prompt_parts_json": ("STRING", {"default": "[]", "multiline": False}),
                 "separator": ("STRING", {"default": ", ", "multiline": False}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
                 "expand_wildcards": ("BOOLEAN", {"default": True}),
                 "exclude_terms": ("STRING", {"default": "", "multiline": False}),
+                "manual_position": (["prepend", "append"], {"default": "prepend"}),
             }
         }
 
@@ -543,12 +543,12 @@ class WildcardOrganizer:
         include_file_contents=False,
         selected_wildcard="",
         manual_text="",
-        manual_position="prepend",
         prompt_parts_json="[]",
         separator=", ",
         seed=0,
         expand_wildcards=False,
         exclude_terms="",
+        manual_position="prepend",
     ):
         if not wildcard_folder:
             wildcard_prompt = _join_prompt_parts(_parts_from_json(prompt_parts_json), separator)
