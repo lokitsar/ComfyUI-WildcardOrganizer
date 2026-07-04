@@ -23,9 +23,27 @@ Use it as a prompt-building workspace: type your main prompt, search your wildca
 
 ## Screenshots
 
+Manual prompt first, with the current Wildcard Organizer layout:
+
+![Wildcard Organizer current layout](docs/images/cover.png)
+
+Search wildcard folders and preview matches:
+
 ![Search wildcard folders](docs/images/search-results.png)
 
+Add a wildcard row to the builder:
+
+![Add a wildcard row](docs/images/add-wildcard.png)
+
+Add literal text rows:
+
+![Add a text row](docs/images/add-text.png)
+
+Group rows into random choices:
+
 ![Group rows into choices](docs/images/choice-group.png)
+
+Preview the raw wildcard prompt and the resolved prompt:
 
 ![Resolved prompt preview](docs/images/resolved-prompt.png)
 
