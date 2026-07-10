@@ -19,6 +19,7 @@ const RECIPES_KEY = "ComfyUI.WildcardOrganizer.recipes";
 const ORGANIZER_HEIGHT = 940;
 const ORGANIZER_DEFAULT_WIDTH = 920;
 const RESOLVE_DEBOUNCE_MS = 250;
+const DEFAULT_SEPARATOR = ", ";
 
 function getWidget(node, name) {
   return node.widgets?.find((widget) => widget.name === name);
@@ -29,6 +30,19 @@ function setWidgetValue(node, name, value) {
   if (widget) {
     widget.value = value;
   }
+}
+
+function normalizeSeparator(value) {
+  if (value === undefined || value === null || value === "") {
+    return DEFAULT_SEPARATOR;
+  }
+  return String(value);
+}
+
+function getSeparatorValue(node) {
+  const separator = normalizeSeparator(getWidget(node, "separator")?.value);
+  setWidgetValue(node, "separator", separator);
+  return separator;
 }
 
 function boolValue(value, defaultValue = false) {
@@ -202,7 +216,7 @@ function partSubtitle(part) {
 }
 
 function buildPromptText(node, panel) {
-  const separator = getWidget(node, "separator")?.value || ", ";
+  const separator = getSeparatorValue(node);
   const manual = (panel?.querySelector(".manual")?.value ?? getWidget(node, "manual_text")?.value ?? "").trim();
   const builderText = getParts(node).map(partPrompt).filter(Boolean).join(separator).trim();
   if (manual && builderText) {
@@ -402,7 +416,7 @@ function syncPanelFromWidgets(node, panel) {
     manualPosition.value = getWidget(node, "manual_position")?.value || "prepend";
   }
   if (joiner) {
-    joiner.value = getWidget(node, "separator")?.value || ", ";
+    joiner.value = getSeparatorValue(node);
   }
   if (resolveOutput) {
     resolveOutput.checked = boolValue(getWidget(node, "expand_wildcards")?.value, true);
@@ -783,7 +797,7 @@ function createPanel(node) {
       className: "joiner-input",
       type: "text",
       title: "Prompt joiner",
-      value: getWidget(node, "separator")?.value || ", ",
+      value: getSeparatorValue(node),
     }),
     Object.assign(document.createElement("div"), { className: "status", textContent: "Builder" })
   );
@@ -1200,7 +1214,7 @@ function currentRecipe(node, panel) {
     manual_text: panel.querySelector(".manual")?.value || "",
     manual_position: panel.querySelector(".manual-position")?.value || "prepend",
     prompt_parts: getParts(node),
-    separator: getWidget(node, "separator")?.value || ", ",
+    separator: getSeparatorValue(node),
     seed: Number(getWidget(node, "seed")?.value || 0),
     expand_wildcards: boolValue(panel.querySelector(".resolve-output")?.checked, true),
   };
@@ -1229,7 +1243,7 @@ function applyRecipe(node, panel, recipe) {
   const resolveOutput = panel.querySelector(".resolve-output");
   const seedInput = panel.querySelector(".seed-input");
   const parts = Array.isArray(recipe.prompt_parts) ? recipe.prompt_parts : [];
-  const separator = typeof recipe.separator === "string" ? recipe.separator : ", ";
+  const separator = normalizeSeparator(recipe.separator);
   const position = recipe.manual_position === "append" ? "append" : "prepend";
   const seed = Number.isFinite(Number(recipe.seed)) ? Number(recipe.seed) : 0;
   const expand = boolValue(recipe.expand_wildcards, true);
@@ -1427,7 +1441,7 @@ async function updateResolvedPrompt(node, panel) {
         parts_json: getWidget(node, "prompt_parts_json")?.value || "[]",
         manual_text: panel.querySelector(".manual")?.value || "",
         manual_position: panel.querySelector(".manual-position")?.value || "prepend",
-        separator: getWidget(node, "separator")?.value || ", ",
+        separator: getSeparatorValue(node),
         seed,
         expand_wildcards: resolveOutput,
       }),

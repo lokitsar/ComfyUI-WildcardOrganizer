@@ -22,6 +22,7 @@ SEARCH_LIMIT = 250
 WILDCARD_PATTERN = re.compile(r"__(.+?)__")
 CHOICE_PATTERN = re.compile(r"\{([^{}]+)\}")
 INDEX_CACHE = {}
+DEFAULT_SEPARATOR = ", "
 
 
 def _bool(value):
@@ -408,6 +409,12 @@ def _manual_position(value):
     return "append" if str(value or "").lower() == "append" else "prepend"
 
 
+def _normalize_separator(value):
+    if value is None or value == "":
+        return DEFAULT_SEPARATOR
+    return str(value)
+
+
 def _join_manual_text(manual_text, generated_text, separator, manual_position="prepend"):
     manual_text = (manual_text or "").strip()
     generated_text = (generated_text or "").strip()
@@ -483,6 +490,7 @@ def _expand_text(root, text, seed=0, max_depth=20):
 
 
 def _build_prompt(root, parts_json, manual_text="", separator=", ", seed=0, expand_wildcards=False, manual_position="prepend"):
+    separator = _normalize_separator(separator)
     parts_json, manual_text = _sanitize_build_inputs(parts_json, manual_text)
     parts = _parts_from_json(parts_json)
     wildcard_prompt = _join_prompt_parts(parts, separator)
@@ -568,7 +576,7 @@ class WildcardOrganizer:
                 "manual_text": ("STRING", {"default": "", "multiline": False}),
                 "prompt_parts_json": ("STRING", {"default": "[]", "multiline": False}),
                 "separator": ("STRING", {"default": ", ", "multiline": False}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF, "control_after_generate": True}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
                 "expand_wildcards": ("BOOLEAN", {"default": True}),
                 "exclude_terms": ("STRING", {"default": "", "multiline": False}),
                 "manual_position": (["prepend", "append"], {"default": "prepend"}),
@@ -595,6 +603,7 @@ class WildcardOrganizer:
         manual_position="prepend",
     ):
         if not wildcard_folder:
+            separator = _normalize_separator(separator)
             wildcard_prompt = _join_prompt_parts(_parts_from_json(prompt_parts_json), separator)
             prompt = _join_manual_text(manual_text, wildcard_prompt, separator, manual_position)
             return (prompt,)
