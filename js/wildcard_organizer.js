@@ -45,6 +45,16 @@ function getSeparatorValue(node) {
   return separator;
 }
 
+function normalizeManualPosition(value) {
+  return String(value || "").toLowerCase() === "append" ? "append" : "prepend";
+}
+
+function getManualPositionValue(node) {
+  const position = normalizeManualPosition(getWidget(node, "manual_position")?.value);
+  setWidgetValue(node, "manual_position", position);
+  return position;
+}
+
 function boolValue(value, defaultValue = false) {
   if (value === undefined || value === null) {
     return defaultValue;
@@ -220,7 +230,8 @@ function buildPromptText(node, panel) {
   const manual = (panel?.querySelector(".manual")?.value ?? getWidget(node, "manual_text")?.value ?? "").trim();
   const builderText = getParts(node).map(partPrompt).filter(Boolean).join(separator).trim();
   if (manual && builderText) {
-    const position = panel?.querySelector(".manual-position")?.value ?? getWidget(node, "manual_position")?.value ?? "prepend";
+    const position = normalizeManualPosition(panel?.querySelector(".manual-position")?.value ?? getManualPositionValue(node));
+    setWidgetValue(node, "manual_position", position);
     return position === "append" ? `${builderText}${separator}${manual}` : `${manual}${separator}${builderText}`;
   }
   return manual || builderText;
@@ -251,6 +262,8 @@ function repairCorruptWidgetState(node) {
   }
 
   normalizePartsValue(node);
+  getManualPositionValue(node);
+  getSeparatorValue(node);
 }
 
 function loadFavorites() {
@@ -413,7 +426,7 @@ function syncPanelFromWidgets(node, panel) {
     manual.value = getWidget(node, "manual_text")?.value || "";
   }
   if (manualPosition) {
-    manualPosition.value = getWidget(node, "manual_position")?.value || "prepend";
+    manualPosition.value = getManualPositionValue(node);
   }
   if (joiner) {
     joiner.value = getSeparatorValue(node);
@@ -821,8 +834,9 @@ function createPanel(node) {
     updateFinalPrompt(node, panel);
   });
   const manualPosition = panel.querySelector(".manual-position");
-  manualPosition.value = getWidget(node, "manual_position")?.value || "prepend";
+  manualPosition.value = getManualPositionValue(node);
   manualPosition.addEventListener("change", () => {
+    manualPosition.value = normalizeManualPosition(manualPosition.value);
     setWidgetValue(node, "manual_position", manualPosition.value);
     updateFinalPrompt(node, panel);
   });
@@ -1212,7 +1226,7 @@ function currentRecipe(node, panel) {
   return {
     version: 1,
     manual_text: panel.querySelector(".manual")?.value || "",
-    manual_position: panel.querySelector(".manual-position")?.value || "prepend",
+    manual_position: normalizeManualPosition(panel.querySelector(".manual-position")?.value),
     prompt_parts: getParts(node),
     separator: getSeparatorValue(node),
     seed: Number(getWidget(node, "seed")?.value || 0),
@@ -1244,7 +1258,7 @@ function applyRecipe(node, panel, recipe) {
   const seedInput = panel.querySelector(".seed-input");
   const parts = Array.isArray(recipe.prompt_parts) ? recipe.prompt_parts : [];
   const separator = normalizeSeparator(recipe.separator);
-  const position = recipe.manual_position === "append" ? "append" : "prepend";
+  const position = normalizeManualPosition(recipe.manual_position);
   const seed = Number.isFinite(Number(recipe.seed)) ? Number(recipe.seed) : 0;
   const expand = boolValue(recipe.expand_wildcards, true);
 
@@ -1440,7 +1454,7 @@ async function updateResolvedPrompt(node, panel) {
         root,
         parts_json: getWidget(node, "prompt_parts_json")?.value || "[]",
         manual_text: panel.querySelector(".manual")?.value || "",
-        manual_position: panel.querySelector(".manual-position")?.value || "prepend",
+        manual_position: normalizeManualPosition(panel.querySelector(".manual-position")?.value),
         separator: getSeparatorValue(node),
         seed,
         expand_wildcards: resolveOutput,

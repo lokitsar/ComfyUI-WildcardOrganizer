@@ -1,6 +1,7 @@
 import json
 import random
 import re
+import time
 from pathlib import Path
 
 try:
@@ -23,6 +24,8 @@ WILDCARD_PATTERN = re.compile(r"__(.+?)__")
 CHOICE_PATTERN = re.compile(r"\{([^{}]+)\}")
 INDEX_CACHE = {}
 DEFAULT_SEPARATOR = ", "
+PROMPT_QUEUE_STATE = {}
+PROMPT_QUEUE_LIBRARY = Path(__file__).resolve().parent / "prompt_queues"
 
 
 def _bool(value):
@@ -510,6 +513,124 @@ def _json_error(message, status=400):
     return web.json_response({"error": message}, status=status)
 
 
+def _prompt_lines(text, skip_blank_lines=True, skip_comment_lines=True):
+    lines = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if skip_blank_lines and not line:
+            continue
+        if skip_comment_lines and line.startswith("#"):
+            continue
+        if line:
+            lines.append(line)
+    return lines
+
+
+def _clamp_index(index, count):
+    if count <= 0:
+        return 0
+    return max(0, min(int(index or 0), count - 1))
+
+
+def _next_prompt_index(index, count, wrap=True):
+    if count <= 0:
+        return 0
+    next_index = index + 1
+    if next_index >= count:
+        return 0 if _bool(wrap) else count - 1
+    return next_index
+
+
+def _prompt_queue_signature(prompt_text, skip_blank_lines=True, skip_comment_lines=True):
+    return json.dumps(
+        {
+            "prompt_text": prompt_text or "",
+            "skip_blank_lines": _bool(skip_blank_lines),
+            "skip_comment_lines": _bool(skip_comment_lines),
+        },
+        sort_keys=True,
+    )
+
+
+def _resolve_text_file(path_text, must_exist=False):
+    path = Path(path_text or "").expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    else:
+        path = path.resolve()
+    if path.suffix.lower() != ".txt":
+        raise ValueError("Prompt library files must use a .txt extension.")
+    if must_exist and not path.is_file():
+        raise FileNotFoundError(f"Prompt file does not exist: {path}")
+    return path
+
+
+def _resolve_export_text_file(folder_text, path_text):
+    path_text = str(path_text or "").strip()
+    if not path_text:
+        raise ValueError("Choose a wildcard export file name or path.")
+
+    path = Path(path_text).expanduser()
+    if path.suffix == "":
+        path = path.with_suffix(".txt")
+    if path.suffix.lower() != ".txt":
+        raise ValueError("Wildcard export files must use a .txt extension.")
+
+    if path.is_absolute():
+        return path.resolve()
+
+    folder = Path(folder_text or "").expanduser()
+    if not str(folder_text or "").strip():
+        return (Path.cwd() / path).resolve()
+    if not folder.is_absolute():
+        folder = (Path.cwd() / folder).resolve()
+    else:
+        folder = folder.resolve()
+    return (folder / path).resolve()
+
+
+def _prompt_queue_library_folder(folder_text=""):
+    return PROMPT_QUEUE_LIBRARY
+
+
+def _safe_prompt_queue_name(name):
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("Choose a queue file name.")
+    path = Path(name)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("Queue file names must stay inside the prompt queue library folder.")
+    if path.suffix.lower() != ".txt":
+        path = path.with_suffix(".txt")
+    return path
+
+
+def _resolve_prompt_queue_file(folder_text, name, must_exist=False):
+    folder = _prompt_queue_library_folder(folder_text)
+    path = (folder / _safe_prompt_queue_name(name)).resolve()
+    try:
+        path.relative_to(folder.resolve())
+    except ValueError as exc:
+        raise PermissionError("Queue file must stay inside the prompt queue library folder.") from exc
+    if must_exist and not path.is_file():
+        raise FileNotFoundError(f"Prompt queue file does not exist: {path}")
+    return path
+
+
+def _list_prompt_files(folder_text):
+    folder = _prompt_queue_library_folder(folder_text)
+    if not folder.exists():
+        return {"folder": str(folder), "files": []}
+    if not folder.is_dir():
+        raise NotADirectoryError(f"Prompt library path is not a folder: {folder}")
+
+    files = []
+    for path in sorted(folder.rglob("*.txt")):
+        if path.is_file():
+            files.append({"path": str(path), "name": path.relative_to(folder).as_posix()})
+    return {"folder": str(folder), "files": files}
+
+
 if PromptServer is not None and web is not None:
     routes = PromptServer.instance.routes
 
@@ -563,6 +684,45 @@ if PromptServer is not None and web is not None:
         except Exception as exc:
             return _json_error(str(exc))
 
+    @routes.get("/wildcard_organizer/prompt_queue/list")
+    async def prompt_queue_list(request):
+        try:
+            return web.json_response(_list_prompt_files(""))
+        except Exception as exc:
+            return _json_error(str(exc))
+
+    @routes.post("/wildcard_organizer/prompt_queue/load")
+    async def prompt_queue_load(request):
+        try:
+            data = await request.json()
+            path = _resolve_text_file(data.get("path", ""), must_exist=True)
+            return web.json_response({"path": str(path), "content": _read_text(path)})
+        except Exception as exc:
+            return _json_error(str(exc))
+
+    @routes.post("/wildcard_organizer/prompt_queue/save")
+    async def prompt_queue_save(request):
+        try:
+            data = await request.json()
+            path = _resolve_export_text_file(data.get("folder", ""), data.get("path", ""))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(data.get("content", "") or "", encoding="utf-8", newline="\n")
+            return web.json_response({"path": str(path), "bytes": path.stat().st_size})
+        except Exception as exc:
+            return _json_error(str(exc))
+
+    @routes.post("/wildcard_organizer/prompt_queue/save_library")
+    async def prompt_queue_save_library(request):
+        try:
+            data = await request.json()
+            path = _resolve_prompt_queue_file("", data.get("name", ""))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(data.get("content", "") or "", encoding="utf-8", newline="\n")
+            folder = _prompt_queue_library_folder("")
+            return web.json_response({"path": str(path), "name": path.relative_to(folder).as_posix(), "bytes": path.stat().st_size})
+        except Exception as exc:
+            return _json_error(str(exc))
+
 
 class WildcardOrganizer:
     @classmethod
@@ -579,7 +739,7 @@ class WildcardOrganizer:
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
                 "expand_wildcards": ("BOOLEAN", {"default": True}),
                 "exclude_terms": ("STRING", {"default": "", "multiline": False}),
-                "manual_position": (["prepend", "append"], {"default": "prepend"}),
+                "manual_position": ("STRING", {"default": "prepend", "multiline": False}),
             }
         }
 
@@ -613,10 +773,97 @@ class WildcardOrganizer:
         return (built["prompt"],)
 
 
+class PromptLineQueue:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt_text": ("STRING", {"default": "", "multiline": True}),
+                "current_index": ("INT", {"default": 0, "min": 0, "max": 1000000}),
+                "auto_advance": ("BOOLEAN", {"default": True}),
+                "wrap": ("BOOLEAN", {"default": True}),
+                "skip_blank_lines": ("BOOLEAN", {"default": True}),
+                "skip_comment_lines": ("BOOLEAN", {"default": True}),
+                "library_folder": ("STRING", {"default": "", "multiline": False}),
+                "selected_file": ("STRING", {"default": "", "multiline": False}),
+                "queue_save_name": ("STRING", {"default": "", "multiline": False}),
+                "wildcard_folder": ("STRING", {"default": "", "multiline": False}),
+                "wildcard_save_path": ("STRING", {"default": "", "multiline": False}),
+                "reset_token": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFF}),
+            },
+            "hidden": {
+                "unique_id": "UNIQUE_ID",
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "INT", "INT", "STRING")
+    RETURN_NAMES = ("prompt", "line", "count", "source")
+    FUNCTION = "emit"
+    CATEGORY = "utils/wildcards"
+
+    @classmethod
+    def IS_CHANGED(cls, *args, **kwargs):
+        return time.time()
+
+    def emit(
+        self,
+        prompt_text,
+        current_index=0,
+        auto_advance=True,
+        wrap=True,
+        skip_blank_lines=True,
+        skip_comment_lines=True,
+        library_folder="",
+        selected_file="",
+        queue_save_name="",
+        wildcard_folder="",
+        wildcard_save_path="",
+        reset_token=0,
+        unique_id=None,
+    ):
+        lines = _prompt_lines(prompt_text, skip_blank_lines, skip_comment_lines)
+        count = len(lines)
+        requested_index = _clamp_index(current_index, count)
+        signature = _prompt_queue_signature(prompt_text, skip_blank_lines, skip_comment_lines)
+        key = str(unique_id or "__prompt_line_queue__")
+        state = PROMPT_QUEUE_STATE.get(key)
+
+        should_reset = (
+            not state
+            or state.get("signature") != signature
+            or int(state.get("reset_token", 0)) != int(reset_token or 0)
+            or int(state.get("last_widget_index", requested_index)) != int(requested_index)
+        )
+
+        if should_reset or not _bool(auto_advance):
+            index = requested_index
+        else:
+            index = _clamp_index(state.get("next_index", requested_index), count)
+
+        prompt = lines[index] if lines else ""
+        next_index = _next_prompt_index(index, count, wrap) if _bool(auto_advance) else index
+        PROMPT_QUEUE_STATE[key] = {
+            "signature": signature,
+            "next_index": next_index,
+            "last_index": index,
+            "last_widget_index": requested_index,
+            "reset_token": int(reset_token or 0),
+        }
+
+        line_number = index + 1 if count else 0
+        source = selected_file or queue_save_name or wildcard_save_path or wildcard_folder or "pasted"
+        return {
+            "ui": {"prompt": [prompt], "line": [line_number], "count": [count], "source": [source]},
+            "result": (prompt, line_number, count, source),
+        }
+
+
 NODE_CLASS_MAPPINGS = {
     "WildcardOrganizer": WildcardOrganizer,
+    "PromptLineQueue": PromptLineQueue,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "WildcardOrganizer": "Wildcard Organizer",
+    "PromptLineQueue": "Prompt Line Queue",
 }
