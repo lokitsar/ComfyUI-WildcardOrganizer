@@ -159,6 +159,26 @@ The node has one output:
 
 - `prompt`: the composed prompt string, either resolved or raw depending on the `send resolved text` checkbox.
 
+## LLM Wildcards & Prompt Variations
+
+Find **LLM Wildcards & Prompt Variations** under **utils/wildcards**. Existing Prompt Variations nodes gain the combined editor. Older Wildcard Prompt nodes still load. Connect **first_prompt** to a string input on your text encoder, or queue the node on its own and copy the output.
+
+**Insert wildcards.** Write your prompt, place the cursor, and click **Insert wildcard…**. Search saved categories or enter a new name. Add instructions and examples if desired. Use **Edit wildcards… → Save wildcard** to create or update a category independently of the prompt. **Save category and insert** inserts a marker such as `{{outdoor setting}}`. Each distinct category gets a separate request containing its name, instructions, examples and recent answers. Repeated references to the same category use the same answer within a prompt. Category definitions and recent answers are saved in `llm_wildcards.sqlite3` under the ComfyUI user directory. Editing a category updates it for other workflows on this installation.
+
+**Mark selections.** Paste a prompt, highlight a phrase, click **Mark selection…**, and choose or create a category. Repeat for other parts. In **Selected parts only**, each request contains just that category's information and the selected phrase. ComfyUI assembles the finished prompt locally. To try **Send whole prompt and rewrite**, switch the mode. This sends the original prompt (restoring the text inside selection markers and filling inserted wildcards) and recent whole-prompt rewrites for this template. This mode asks for a variation of the same image. It preserves the subject, scene and style while varying a few visible details. It asks for affirmative visual descriptions and excludes abstract vibes and negative instructions. The node checks the word count against the source (within 20%, with two words of leeway for short prompts) and retries common negative phrasing. Use **additional_rules** for this prompt, for example “Keep the framing and subject. Vary only the fabric and lighting.” These rules are saved with the workflow and sent only in whole-prompt mode.
+
+Set **count** from 1 to 20. The first output preserves the original formatting in selection mode. **Copy queue lines** and the second output provide one unnumbered line per variation, converting internal line breaks to spaces. Paste the copied list into **Prompt Line Queue** to advance through it across renders. The variation node remembers the last 20 completed prompts for each template and mode. Each category has its own adjustable 1–30 answer history. If a small category runs out of distinct answers, shorten its history. Generation retries duplicates up to four total attempts per answer. A batch of 20 prompts with two categories normally makes 40 chat requests.
+
+### Connections
+
+| Provider | Setup |
+| --- | --- |
+| PolyStrata | Start your model server. The preset uses `http://127.0.0.1:8080/v1`. Set **local_base_url** to the address your server displays if it differs. |
+| KoboldCpp | Load a model in KoboldCpp. The preset uses `http://127.0.0.1:5001/v1`. |
+| NanoGPT | Select **NanoGPT**, enter your key in the masked field, click **Save key & connect / load models**, then choose a model. Both wildcard nodes share the key on this ComfyUI installation. The key is saved locally outside the workflow. An existing `NANOGPT_API_KEY` environment variable also works. |
+
+For local providers, click **Connect / load models**, then choose the model from the dropdown. You can also type the model ID manually. Leaving **model** empty selects the first local model advertised by the server when you queue the node.
+
 ## License
 
 MIT
